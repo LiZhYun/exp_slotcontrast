@@ -359,9 +359,14 @@ class ObjectCentricModel(pl.LightningModule):
         for name, loss_fn in self.loss_fns.items():
             prediction = loss_fn.get_prediction(outputs)
             target = outputs["targets"][name]
-            losses[name] = loss_fn(prediction, target)
+            loss = loss_fn(prediction, target)
+            # Reduce all losses to scalars for logging
+            if loss.ndim > 0:
+                loss = loss.mean()
+            losses[name] = loss
 
         losses_weighted = [loss * self.loss_weights.get(name, 1.0) for name, loss in losses.items()]
+        
         total_loss = torch.stack(losses_weighted).sum()
 
         return total_loss, losses

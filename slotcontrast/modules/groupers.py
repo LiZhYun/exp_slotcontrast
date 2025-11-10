@@ -24,6 +24,7 @@ class SlotAttention(nn.Module):
         use_gru: bool = True,
         use_mlp: bool = True,
         use_ttt: bool = False,
+        use_ent: bool = False,
         frozen: bool = False,
     ):
         super().__init__()
@@ -42,6 +43,7 @@ class SlotAttention(nn.Module):
             self.gru = None
 
         self.use_ttt = use_ttt
+        self.use_ent = use_ent
 
         if hidden_dim is None:
             hidden_dim = 4 * slot_dim
@@ -103,7 +105,22 @@ class SlotAttention(nn.Module):
         if n_iters is None:
             n_iters = self.n_iters
 
+        entropy_loss = None
         for _ in range(n_iters):
             slots, pre_norm_attn = self.step(slots, keys, values)
+            
+            if self.use_ent:
+                if entropy_loss is None:
+                    entropy_loss = self.compute_entropy_loss(pre_norm_attn)
+                else:
+                    entropy_loss = entropy_loss + self.compute_entropy_loss(pre_norm_attn)
 
-        return {"slots": slots, "masks": pre_norm_attn}
+        result = {"slots": slots, "masks": pre_norm_attn}
+        if entropy_loss is not None:
+            result["entropy_loss"] = entropy_loss / n_iters
+        
+        return result
+    
+    def compute_entropy_loss(self, attn: torch.Tensor) -> torch.Tensor:
+        entropy = -torch.sum(attn * torch.log(attn + self.eps), dim=1)
+        return entropy.mean()

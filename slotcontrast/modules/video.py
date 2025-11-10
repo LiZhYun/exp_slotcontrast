@@ -161,7 +161,11 @@ def merge_dict_trees(trees: List[Mapping], axis: int = 0):
         for key, value in ref_tree.items():
             values = [tree[key] for tree in trees]
             if isinstance(value, torch.Tensor):
-                out[key] = torch.stack(values, axis)
+                if value.ndim == 0:
+                    # Handle scalar tensors - stack along new dimension (axis 0)
+                    out[key] = torch.stack(values, 0)
+                else:
+                    out[key] = torch.stack(values, axis)
             elif isinstance(value, Mapping):
                 out[key] = merge_dict_trees(values, axis)
             else:

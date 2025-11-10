@@ -9,6 +9,7 @@ import imageio
 from torchvision import transforms as tvt
 from slotcontrast.visualizations import (
     mix_inputs_with_masks,
+    mix_inputs_with_all_masks,
     draw_segmentation_masks_on_image,
     color_map,
 )
@@ -81,11 +82,42 @@ def main(config):
         # Save the results
         save_dir = os.path.dirname(config.output.save_path)
         os.makedirs(save_dir, exist_ok=True)
+        
+        # Generate grid-based masked video frames (each mask separately)
         masked_video_frames = mix_inputs_with_masks(inputs, outputs)
+        
+        # Generate all-masks-overlaid video frames (all masks on same frame)
+        all_masks_video_frames = mix_inputs_with_all_masks(inputs, outputs, alpha=0.5)
+
+        # Save grid-based video
         with imageio.get_writer(config.output.save_path, fps=10) as writer:
             for frame in masked_video_frames:
                 writer.append_data(frame)
         writer.close()
+        
+        # Save all-masks-overlaid video
+        all_masks_video_path = config.output.save_path.replace('.mp4', '_all_masks.mp4')
+        with imageio.get_writer(all_masks_video_path, fps=10) as writer:
+            for frame in all_masks_video_frames:
+                writer.append_data(frame)
+        writer.close()
+        
+        # Save individual frames to folders
+        video_name = os.path.splitext(os.path.basename(config.output.save_path))[0]
+        
+        # Grid-based frames folder
+        frames_dir = os.path.join(save_dir, video_name)
+        os.makedirs(frames_dir, exist_ok=True)
+        for i, frame in enumerate(masked_video_frames):
+            frame_path = os.path.join(frames_dir, f"frame_{i:06d}.png")
+            plt.imsave(frame_path, frame)
+            
+        # All-masks-overlaid frames folder
+        all_masks_frames_dir = os.path.join(save_dir, f"{video_name}_all_masks")
+        os.makedirs(all_masks_frames_dir, exist_ok=True)
+        for i, frame in enumerate(all_masks_video_frames):
+            frame_path = os.path.join(all_masks_frames_dir, f"frame_{i:06d}.png")
+            plt.imsave(frame_path, frame)
     elif config.input.type == "image" and config.output.save_path:
         save_dir = os.path.dirname(config.output.save_path)
         os.makedirs(save_dir, exist_ok=True)

@@ -43,10 +43,14 @@ model:
       batch_contrast: true
       patch_inputs: false
       keep_input_dim: true
+    loss_entropy:
+      name: EntropyLoss
+      pred_key: processor.corrector.entropy_loss
 
   loss_weights:
     loss_featrec: 1.0
     loss_ss: 0.5
+    loss_entropy: 0.1
 
 
   initializer:
@@ -76,8 +80,9 @@ model:
     slot_dim: ${globals.SLOT_DIM}
     n_iters: 2
     use_mlp: true
-    use_gru: false
-    use_ttt: true
+    use_gru: true
+    use_ttt: false
+    use_ent: true
 
   latent_processor:
     first_step_corrector_args:

@@ -358,3 +358,64 @@ def mix_inputs_with_masks(inputs, outputs, softmasks=False):
         masked_video = (grid_video * grid_frame_rgb * 255).astype(np.uint8)
         masked_video_frames.append(masked_video)
     return masked_video_frames
+
+
+def mix_inputs_with_all_masks(inputs, outputs, softmasks=False, alpha=0.5):
+    """
+    Create video frames with all masks overlaid on the same frame using different colors.
+    
+    Args:
+        inputs: Input dictionary containing video_visualization
+        outputs: Model outputs containing decoder masks
+        softmasks: Whether to use soft masks or hard masks
+        alpha: Transparency level for mask overlay (0=transparent, 1=opaque)
+    
+    Returns:
+        List of frames with all masks overlaid using different colors
+    """
+    b, f, n_slots, hw = outputs["decoder"]["masks"].shape
+    h = int(np.sqrt(hw))
+    w = h
+    masks_video = outputs["decoder"]["masks"].reshape(b, f, n_slots, h, w)
+    assert b == 1, "Batch size must be 1 for visualization"
+    masks_video = masks_video.squeeze(0)
+
+    # resize masks to 224x224
+    resizer = Resize(224, mode="bilinear")
+    masks_video = resizer(masks_video)
+
+    if not softmasks:
+        ind = torch.argmax(masks_video, dim=1, keepdim=True)
+        masks_video = torch.zeros_like(masks_video)
+        masks_video.scatter_(1, ind, 1)
+
+    # Get color map for different masks
+    cmap = color_map(n_slots)
+    
+    # Create video frames with all masks overlaid
+    all_masks_video_frames = []
+    for t in range(masks_video.shape[0]):  # Iterate through each time step
+        # Get the original video frame
+        video_frame = inputs["video_visualization"][0, :, t].permute(1, 2, 0)
+        video_frame = (video_frame * 255).to(torch.uint8)
+        
+        # Get all masks for this time step
+        frame_masks = masks_video[t]  # shape: (n_slots, h, w)
+        
+        # Convert video frame to CHW format to match mask format
+        overlaid_frame = video_frame.permute(2, 0, 1).float()  # [3, H, W]
+        
+        for slot_idx in range(n_slots):
+            mask = frame_masks[slot_idx].bool()
+            if mask.any():  # Only overlay if mask has content
+                color = torch.tensor(cmap[slot_idx], dtype=torch.float32, device=video_frame.device)
+                # Apply mask with color - expand mask to match RGB dimensions
+                mask_rgb = mask.unsqueeze(0).repeat(3, 1, 1)  # [3, H, W]
+                color_overlay = color.view(3, 1, 1) * mask_rgb  # [3, H, W]
+                overlaid_frame = overlaid_frame * (1 - alpha * mask_rgb.float()) + color_overlay * alpha
+        
+        # Convert back to HWC format for saving
+        overlaid_frame = overlaid_frame.permute(1, 2, 0).clamp(0, 255).to(torch.uint8).cpu().numpy()
+        all_masks_video_frames.append(overlaid_frame)
+    
+    return all_masks_video_frames

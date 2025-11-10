@@ -212,3 +212,20 @@ class DynamicsLoss(Loss):
         target = target[:, -rollout_length:]
         loss = self.criterion(prediction, target)
         return loss
+
+
+class EntropyLoss(Loss):
+    def __init__(self, pred_key: str, target_key: str = "dummy", **kwargs):
+        kwargs.pop('video_inputs', None)
+        kwargs.pop('patch_inputs', None)
+        kwargs.pop('keep_input_dim', None)
+        super().__init__(pred_key, target_key, video_inputs=False, patch_inputs=False, keep_input_dim=True, **kwargs)
+    
+    def get_prediction(self, outputs: Dict[str, Any]) -> torch.Tensor:
+        return utils.read_path(outputs, elements=self.pred_path)
+    
+    def get_target(self, inputs: Dict[str, Any], outputs: Dict[str, Any]) -> torch.Tensor:
+        return None
+    
+    def forward(self, entropy_loss: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        return entropy_loss
