@@ -1,0 +1,11 @@
+checkpoint: checkpoints/ytvis.ckpt
+model_config: configs/slotcontrast/ytvis2021.yaml
+n_slots: 7
+input:
+  path: /home/zhiyuan/Codes/slotcontrast/data/ytvis2021_raw/valid/videos/4b1a561480.mp4
+  type: video
+  transforms:
+    dataset_type: video
+    input_size: 224
+output:
+  save_path: /home/zhiyuan/Codes/slotcontrast/data/ytvis2021_raw/valid/videos/4b1a561480_masked.mp4

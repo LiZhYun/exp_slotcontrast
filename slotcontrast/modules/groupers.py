@@ -23,6 +23,7 @@ class SlotAttention(nn.Module):
         eps: float = 1e-8,
         use_gru: bool = True,
         use_mlp: bool = True,
+        use_ttt: bool = False,
         frozen: bool = False,
     ):
         super().__init__()
@@ -39,6 +40,8 @@ class SlotAttention(nn.Module):
         else:
             assert kvq_dim == slot_dim
             self.gru = None
+
+        self.use_ttt = use_ttt
 
         if hidden_dim is None:
             hidden_dim = 4 * slot_dim
@@ -78,6 +81,12 @@ class SlotAttention(nn.Module):
         if self.gru:
             updated_slots = self.gru(updates.flatten(0, 1), slots.flatten(0, 1))
             slots = updated_slots.unflatten(0, slots.shape[:2])
+        elif self.use_ttt:
+            # TTT: Test-Time Training with attention-based adaptive updates
+            # Use attention weights as relevance scores for adaptive slot updates
+            slot_relevance = attn.mean(dim=-1, keepdim=True)  # Average attention across features [b, s, 1]
+            update_weight = torch.sigmoid(slot_relevance)  # Scale to [0, 1]
+            slots = updates * update_weight + slots * (1 - update_weight)
         else:
             slots = slots + updates
 

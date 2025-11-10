@@ -61,6 +61,8 @@ model:
       features: vit_block12
       frozen: true
       pretrained: true
+      model_kwargs:
+        dynamic_img_size: true
     output_transform:
       name: networks.two_layer_mlp
       inp_dim: ${globals.FEAT_DIM}
@@ -74,6 +76,8 @@ model:
     slot_dim: ${globals.SLOT_DIM}
     n_iters: 2
     use_mlp: true
+    use_gru: false
+    use_ttt: true
 
   latent_processor:
     first_step_corrector_args:
