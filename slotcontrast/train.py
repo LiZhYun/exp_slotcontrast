@@ -13,6 +13,9 @@ from pytorch_lightning.utilities import rank_zero_info as log_info
 
 from slotcontrast import configuration, data, metrics, models, utils
 
+os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"  # reproducibility
+os.environ["PL_GLOBAL_SEED"] = "42"  # reproducibility
+
 RESULT_FINISHED = 0
 RESULT_TIMEOUT = 1
 
