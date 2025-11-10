@@ -8,7 +8,7 @@ globals:
   FEAT_DIM: 768
   NUM_PATCHES: 1369
   NUM_GPUS: 1
-  BATCH_SIZE_PER_GPU: 64
+  BATCH_SIZE_PER_GPU: 4
   TOTAL_BATCH_SIZE: "${mul: ${.NUM_GPUS}, ${.BATCH_SIZE_PER_GPU}}"
   BASE_LR: 0.0001
 
@@ -119,8 +119,8 @@ val_metrics:
     true_key: segmentations
 
 dataset:
-  train_shards: "ytvis2021/ytvis-train-{000000..000083}.tar"
-  val_shards: "ytvis2021/ytvis-validation-{000000..000029}.tar"
+  train_shards: "ytvis2021_resized/ytvis-train-{000000..000083}.tar"
+  val_shards: "ytvis2021_resized/ytvis-validation-{000000..000029}.tar"
   batch_size: ${globals.BATCH_SIZE_PER_GPU}
   val_batch_size: 1
   val_size: 200
