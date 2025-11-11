@@ -2,9 +2,9 @@
 #SBATCH --job-name=slotcontrast_train
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=4
+#SBATCH --cpus-per-task=12
 #SBATCH --mem=32G
-#SBATCH --time=0-60:00:00
+#SBATCH --time=0-20:00:00
 #SBATCH --gres=gpu:a100:1
 #SBATCH --output=logs/train_%j.out
 #SBATCH --error=logs/train_%j.err
