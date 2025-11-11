@@ -697,6 +697,153 @@ class TransformerEncoder(nn.Module):
         return x
 
 
+class MemoryConditionedLayer(nn.Module):
+    """Single layer with self-attention and optional cross-attention to memory."""
+
+    def __init__(
+        self,
+        dim: int,
+        memory_dim: int,
+        n_heads: int,
+        hidden_dim: int,
+        dropout: float,
+        activation: str,
+        use_memory: bool = True,
+    ):
+        super().__init__()
+        self.use_memory = use_memory
+
+        # Self-attention (always present)
+        self.self_attn = nn.MultiheadAttention(
+            dim, n_heads, dropout=dropout, batch_first=True
+        )
+        self.norm1 = nn.LayerNorm(dim)
+        self.dropout1 = nn.Dropout(dropout)
+
+        # Cross-attention to memory (conditional)
+        if use_memory:
+            self.cross_attn = nn.MultiheadAttention(
+                dim, n_heads, dropout=dropout, batch_first=True,
+                kdim=memory_dim, vdim=memory_dim,
+            )
+            self.norm2 = nn.LayerNorm(dim)
+            self.dropout2 = nn.Dropout(dropout)
+
+        # Feedforward (always present)
+        self.ffn = nn.Sequential(
+            nn.Linear(dim, hidden_dim),
+            nn.ReLU() if activation == "relu" else nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, dim),
+            nn.Dropout(dropout),
+        )
+        self.norm3 = nn.LayerNorm(dim)
+        self.dropout3 = nn.Dropout(dropout)
+
+    def forward(
+        self,
+        tgt: torch.Tensor,
+        memory: Optional[torch.Tensor] = None,
+        memory_pos: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        # Self-attention
+        tgt2 = self.norm1(tgt)
+        tgt2, _ = self.self_attn(tgt2, tgt2, tgt2)
+        tgt = tgt + self.dropout1(tgt2)
+
+        # Cross-attention to memory (if enabled and memory available)
+        if self.use_memory and memory is not None:
+            tgt2 = self.norm2(tgt)
+            # Add temporal positional encoding to keys
+            memory_k = memory + memory_pos if memory_pos is not None else memory
+            tgt2, _ = self.cross_attn(tgt2, memory_k, memory)
+            tgt = tgt + self.dropout2(tgt2)
+
+        # Feedforward
+        tgt2 = self.norm3(tgt)
+        tgt2 = self.ffn(tgt2)
+        tgt = tgt + self.dropout3(tgt2)
+
+        return tgt
+
+
+class MemoryConditionedTransformer(nn.Module):
+    """Transformer predictor with optional cross-attention to memory bank."""
+
+    def __init__(
+        self,
+        dim: int,
+        n_blocks: int,
+        n_heads: int,
+        memory_dim: Optional[int] = None,
+        use_memory: bool = True,
+        dropout: float = 0.0,
+        activation: str = "relu",
+        hidden_dim: Optional[int] = None,
+        frozen: bool = False,
+    ):
+        super().__init__()
+        self.use_memory = use_memory
+
+        if hidden_dim is None:
+            hidden_dim = 4 * dim
+        if memory_dim is None:
+            memory_dim = dim
+
+        self.dim = dim
+        self.memory_dim = memory_dim
+
+        # Memory-conditioned layers
+        self.layers = nn.ModuleList(
+            [
+                MemoryConditionedLayer(
+                    dim=dim,
+                    memory_dim=memory_dim,
+                    n_heads=n_heads,
+                    hidden_dim=hidden_dim,
+                    dropout=dropout,
+                    activation=activation,
+                    use_memory=use_memory,
+                )
+                for _ in range(n_blocks)
+            ]
+        )
+
+        self.norm = nn.LayerNorm(dim)
+
+        if frozen:
+            for param in self.parameters():
+                param.requires_grad = False
+
+    def forward(
+        self,
+        slots: torch.Tensor,
+        memory: Optional[torch.Tensor] = None,
+        memory_pos: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """
+        Predict next frame's slot initialization conditioned on memory.
+        
+        Args:
+            slots: [B, n_slots, dim] - current frame's slots
+            memory: [B, N_mem, memory_dim] - concatenated memory features
+            memory_pos: [B, N_mem, memory_dim] - temporal positional encodings
+            
+        Returns:
+            predicted_slots: [B, n_slots, dim] - initialization for next frame
+        """
+        output = slots
+
+        for layer in self.layers:
+            if self.use_memory:
+                output = layer(output, memory, memory_pos)
+            else:
+                # Ablation: no memory, just self-attention
+                output = layer(output, memory=None, memory_pos=None)
+
+        return self.norm(output)
+
+
 class TransformerDecoderLayer(nn.TransformerDecoderLayer):
     """Like torch.nn.TransformerDecoderLayer, but with customizations."""
 

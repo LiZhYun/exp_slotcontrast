@@ -48,12 +48,28 @@ def build(
             predictor = modules.build_module(model_config.predictor)
         else:
             predictor = None
+        
+        # Build memory components if specified
+        memory_encoder = None
+        memory_bank = None
         if model_config.latent_processor:
+            latent_proc_config = model_config.latent_processor
+            if hasattr(latent_proc_config, "memory_encoder") and latent_proc_config.memory_encoder:
+                memory_encoder = modules.build_memory_encoder(latent_proc_config.memory_encoder)
+            if hasattr(latent_proc_config, "memory_bank") and latent_proc_config.memory_bank:
+                memory_bank = modules.build_memory_bank(latent_proc_config.memory_bank)
+            
+            # Create filtered config without memory components (they're passed as kwargs)
+            filtered_config = {k: v for k, v in latent_proc_config.items() 
+                             if k not in ("memory_encoder", "memory_bank")}
+            
             processor = modules.build_video(
-                model_config.latent_processor,
+                filtered_config,
                 "LatentProcessor",
                 corrector=grouper,
                 predictor=predictor,
+                memory_encoder=memory_encoder,
+                memory_bank=memory_bank,
             )
         else:
             processor = modules.LatentProcessor(grouper, predictor)

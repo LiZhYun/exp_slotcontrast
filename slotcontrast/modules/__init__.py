@@ -4,6 +4,8 @@ from slotcontrast.modules.dynamics import build as build_dynamics_predictor
 from slotcontrast.modules.encoders import build as build_encoder
 from slotcontrast.modules.groupers import build as build_grouper
 from slotcontrast.modules.initializers import build as build_initializer
+from slotcontrast.modules.memory import MemoryBank, SlotMemoryEncoder
+from slotcontrast.modules.memory import build_memory_bank, build_memory_encoder
 from slotcontrast.modules.networks import build as build_network
 from slotcontrast.modules.utils import Resizer, SoftToHardMask
 from slotcontrast.modules.utils import build as build_utils
@@ -17,6 +19,8 @@ __all__ = [
     "build_encoder",
     "build_grouper",
     "build_initializer",
+    "build_memory_bank",
+    "build_memory_encoder",
     "build_network",
     "build_utils",
     "build_module",
@@ -26,6 +30,8 @@ __all__ = [
     "MapOverTime",
     "ScanOverTime",
     "LatentProcessor",
+    "MemoryBank",
+    "SlotMemoryEncoder",
     "Resizer",
     "SoftToHardMask",
 ]
@@ -37,6 +43,8 @@ BUILD_FNS_BY_MODULE_GROUP = {
     "encoders": build_encoder,
     "groupers": build_grouper,
     "initializers": build_initializer,
+    "memory_banks": build_memory_bank,
+    "memory_encoders": build_memory_encoder,
     "networks": build_network,
     "utils": build_utils,
     "video": build_video,

@@ -87,6 +87,26 @@ model:
   latent_processor:
     first_step_corrector_args:
       n_iters: 3
+    
+    # ============== MEMORY SYSTEM (Optional) ==============
+    # Uncomment the following sections to enable SAM2-style temporal memory
+    # This stores past frame information to improve temporal consistency
+    
+    # memory_encoder:
+    #   name: SlotMemoryEncoder            # Note: imported in modules/__init__.py
+    #   slot_dim: ${globals.SLOT_DIM}      # Slot feature dimension
+    #   feat_dim: ${globals.SLOT_DIM}      # Encoder feature dimension
+    #   mem_dim: ${globals.SLOT_DIM}       # Memory representation dimension
+    #   n_slots: ${globals.NUM_SLOTS}      # Number of slots per frame
+    #   fusion_blocks: 1                   # Number of transformer fusion layers
+    #   dropout: 0.0                       # Dropout rate
+    
+    # memory_bank:
+    #   name: MemoryBank                   # Note: imported in modules/__init__.py
+    #   capacity: 7                        # Max frames to store (FIFO queue)
+    #   mem_dim: ${globals.SLOT_DIM}       # Memory feature dimension
+    #   temporal_stride_eval: 1            # Temporal stride during evaluation
+    # ======================================================
 
   decoder:
     name: MLPDecoder
@@ -96,10 +116,25 @@ model:
     n_patches: ${globals.NUM_PATCHES}
 
   predictor:
-    name: networks.TransformerEncoder
-    dim: ${globals.SLOT_DIM}
-    n_blocks: 1
-    n_heads: 4
+    # Standard predictor (no memory)
+    # name: networks.TransformerEncoder
+    # dim: ${globals.SLOT_DIM}
+    # n_blocks: 1
+    # n_heads: 4
+    
+    # ============== MEMORY-CONDITIONED PREDICTOR (Optional) ==============
+    # Uncomment to use memory-conditioned predictor with cross-attention
+    # NOTE: If using memory, also uncomment memory_encoder and memory_bank above
+    
+    # name: networks.MemoryConditionedTransformer
+    # dim: ${globals.SLOT_DIM}              # Slot dimension
+    # memory_dim: ${globals.SLOT_DIM}       # Memory dimension
+    # n_blocks: 1                           # Number of transformer blocks
+    # n_heads: 4                            # Number of attention heads
+    # use_memory: true                      # Enable/disable cross-attention (for ablation)
+    # dropout: 0.0                          # Dropout rate
+    # activation: relu                      # Activation function
+    # =====================================================================
 
 val_metrics:
   ari:

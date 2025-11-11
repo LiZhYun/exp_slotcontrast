@@ -87,7 +87,7 @@ class SlotAttention(nn.Module):
             # TTT: Test-Time Training with attention-based adaptive updates
             # Following TTT3R: use attention BEFORE softmax (dots) for adaptive updates
             # Higher attention logits = more relevant = larger update weight
-            slot_relevance = dots.mean(dim=-1, keepdim=True)  # Average attention logits across features [b, s, 1]
+            slot_relevance = attn.mean(dim=-1, keepdim=True)  # Average attention logits across features [b, s, 1]
             update_weight = torch.sigmoid(slot_relevance)  # Scale to [0, 1]
             slots = updates * update_weight + slots * (1 - update_weight)
         else:

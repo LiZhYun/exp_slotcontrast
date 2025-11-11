@@ -18,12 +18,16 @@ class LatentProcessor(nn.Module):
         self,
         corrector: nn.Module,
         predictor: Optional[nn.Module] = None,
+        memory_encoder: Optional[nn.Module] = None,
+        memory_bank: Optional[nn.Module] = None,
         state_key: str = "slots",
         first_step_corrector_args: Optional[Dict[str, Any]] = None,
     ):
         super().__init__()
         self.corrector = corrector
         self.predictor = predictor
+        self.memory_encoder = memory_encoder
+        self.memory_bank = memory_bank
         self.state_key = state_key
         if first_step_corrector_args is not None:
             self.first_step_corrector_args = first_step_corrector_args
@@ -35,22 +39,65 @@ class LatentProcessor(nn.Module):
     ) -> Dict[str, torch.Tensor]:
         # state: batch x n_slots x slot_dim
         assert state.ndim == 3
-        # inputs: batch x n_inputs x input_dim
+        # inputs: batch x n_patches x input_dim (encoder features)
         assert inputs.ndim == 3
 
+        # 1. CORRECT: Update slots based on current frame features
         if inputs is not None:
             if time_step == 0 and self.first_step_corrector_args:
                 corrector_output = self.corrector(state, inputs, **self.first_step_corrector_args)
             else:
                 corrector_output = self.corrector(state, inputs)
             updated_state = corrector_output[self.state_key]
+            corrector_masks = corrector_output.get("masks")
         else:
             # Run predictor without updating on current inputs
             corrector_output = None
             updated_state = state
+            corrector_masks = None
 
+        # 2. ENCODE MEMORY (if components exist)
+        if (
+            self.memory_encoder is not None
+            and self.memory_bank is not None
+            and time_step is not None
+            and corrector_masks is not None
+        ):
+            # Encode current frame into memory
+            memory_encoding = self.memory_encoder(
+                slots=updated_state.detach(),
+                features=inputs.detach(),
+                masks=corrector_masks.detach(),
+            )
+
+            # Store in memory bank
+            self.memory_bank.push(
+                frame_idx=time_step,
+                slots=updated_state.detach(),
+                features=inputs.detach(),
+                masks=corrector_masks.detach(),
+                **memory_encoding
+            )
+
+        # 3. RETRIEVE MEMORY for prediction
+        memory = None
+        memory_pos = None
+        if self.memory_bank is not None and time_step is not None and time_step > 0:
+            memory, memory_pos = self.memory_bank.get_memories(time_step, training=self.training)
+
+        # 4. PREDICT: Generate initialization for NEXT frame
         if self.predictor:
-            predicted_state = self.predictor(updated_state)
+            # Check if predictor supports memory
+            if (
+                hasattr(self.predictor, "use_memory")
+                and getattr(self.predictor, "use_memory", False)
+                and memory is not None
+            ):
+                # Predict with memory conditioning
+                predicted_state = self.predictor(updated_state, memory, memory_pos)
+            else:
+                # Standard prediction without memory
+                predicted_state = self.predictor(updated_state)
         else:
             # Just pass updated_state along as prediction
             predicted_state = updated_state
@@ -121,6 +168,10 @@ class ScanOverTime(nn.Module):
         # initial_state: batch x ...
         # inputs: batch x n_frames x ...
         seq_len = inputs.shape[1]
+
+        # Clear memory bank at start of sequence
+        if hasattr(self.module, "memory_bank") and self.module.memory_bank is not None:
+            self.module.memory_bank.clear()
 
         state = initial_state
         outputs = []
