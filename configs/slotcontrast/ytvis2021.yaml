@@ -168,8 +168,8 @@ dataset:
   batch_size: ${globals.BATCH_SIZE_PER_GPU}
   val_batch_size: 1
   val_size: 200
-  num_workers: 4
-  num_val_workers: 1
+  num_workers: 8
+  num_val_workers: 2
   train_pipeline:
     chunk_size: 4
     keys: [video]
