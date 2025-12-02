@@ -168,3 +168,6 @@ lightning_logs/
 # Ignore checkpoints and outputs
 checkpoints/
 outputs/
+
+ytvis2021_resized/
+*.tar
