@@ -25,6 +25,7 @@ class SlotAttention(nn.Module):
         use_mlp: bool = True,
         use_ttt: bool = False,
         use_ent: bool = False,
+        use_gated: bool = False,
         frozen: bool = False,
     ):
         super().__init__()
@@ -44,6 +45,10 @@ class SlotAttention(nn.Module):
 
         self.use_ttt = use_ttt
         self.use_ent = use_ent
+        self.use_gated = use_gated
+
+        if use_gated:
+            self.gate_proj = nn.Linear(slot_dim, kvq_dim, bias=True)
 
         if hidden_dim is None:
             hidden_dim = 4 * slot_dim
@@ -90,6 +95,12 @@ class SlotAttention(nn.Module):
             slot_relevance = attn.mean(dim=-1, keepdim=True)  # Average attention logits across features [b, s, 1]
             update_weight = torch.sigmoid(slot_relevance)  # Scale to [0, 1]
             slots = updates * update_weight + slots * (1 - update_weight)
+        elif self.use_gated:
+            # Gated Attention: Y ⊙ σ(XWθ) - head-specific sigmoid gate
+            gate_logits = self.gate_proj(slots)
+            gate_scores = torch.sigmoid(gate_logits)
+            gated_updates = updates * gate_scores
+            slots = slots + gated_updates
         else:
             slots = slots + updates
 

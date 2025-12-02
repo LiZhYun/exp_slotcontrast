@@ -82,6 +82,7 @@ model:
     use_mlp: true
     use_gru: true
     use_ttt: false
+    use_gated: false
     use_ent: false
 
   latent_processor:
