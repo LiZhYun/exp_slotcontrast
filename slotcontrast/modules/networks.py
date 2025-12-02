@@ -617,24 +617,38 @@ class TransformerEncoderLayer(nn.TransformerEncoderLayer):
         src_mask: Optional[torch.Tensor] = None,
         src_key_padding_mask: Optional[torch.Tensor] = None,
         memory: Optional[torch.Tensor] = None,
+        return_weights: bool = False,
     ) -> torch.Tensor:
         x = src
+        attn = None
         if self.norm_first:
-            x = x + self.scale1(
-                self._sa_block(
-                    self.norm1(x), src_mask, src_key_padding_mask, keys=memory, values=memory
+            if return_weights:
+                residual, attn = self._sa_block(
+                    self.norm1(x), src_mask, src_key_padding_mask, keys=memory, values=memory, return_weights=True
                 )
-            )
+                x = x + self.scale1(residual)
+            else:
+                x = x + self.scale1(
+                    self._sa_block(
+                        self.norm1(x), src_mask, src_key_padding_mask, keys=memory, values=memory
+                    )
+                )
             x = x + self.scale2(self._ff_block(self.norm2(x)))
         else:
-            x = self.norm1(
-                x
-                + self.scale1(
-                    self._sa_block(x, src_mask, src_key_padding_mask, keys=memory, values=memory)
+            if return_weights:
+                residual, attn = self._sa_block(x, src_mask, src_key_padding_mask, keys=memory, values=memory, return_weights=True)
+                x = self.norm1(x + self.scale1(residual))
+            else:
+                x = self.norm1(
+                    x
+                    + self.scale1(
+                        self._sa_block(x, src_mask, src_key_padding_mask, keys=memory, values=memory)
+                    )
                 )
-            )
             x = self.norm2(x + self.scale2(self._ff_block(x)))
 
+        if return_weights:
+            return x, attn
         return x
 
 
@@ -688,12 +702,20 @@ class TransformerEncoder(nn.Module):
         mask: Optional[torch.Tensor] = None,
         key_padding_mask: Optional[torch.Tensor] = None,
         memory: Optional[torch.Tensor] = None,
+        return_weights: bool = False,
     ) -> torch.Tensor:
         x = inp
+        attn_list = [] if return_weights else None
 
         for block in self.blocks:
-            x = block(x, mask, key_padding_mask, memory)
+            if return_weights:
+                x, attn = block(x, mask, key_padding_mask, memory, return_weights=True)
+                attn_list.append(attn)
+            else:
+                x = block(x, mask, key_padding_mask, memory)
 
+        if return_weights:
+            return x, attn_list
         return x
 
 
@@ -745,18 +767,20 @@ class MemoryConditionedLayer(nn.Module):
         tgt: torch.Tensor,
         memory: Optional[torch.Tensor] = None,
         memory_pos: Optional[torch.Tensor] = None,
+        return_weights: bool = False,
     ) -> torch.Tensor:
         # Self-attention
         tgt2 = self.norm1(tgt)
-        tgt2, _ = self.self_attn(tgt2, tgt2, tgt2)
+        tgt2, self_attn = self.self_attn(tgt2, tgt2, tgt2, need_weights=return_weights)
         tgt = tgt + self.dropout1(tgt2)
 
         # Cross-attention to memory (if enabled and memory available)
+        cross_attn = None
         if self.use_memory and memory is not None:
             tgt2 = self.norm2(tgt)
             # Add temporal positional encoding to keys
             memory_k = memory + memory_pos if memory_pos is not None else memory
-            tgt2, _ = self.cross_attn(tgt2, memory_k, memory)
+            tgt2, cross_attn = self.cross_attn(tgt2, memory_k, memory, need_weights=return_weights)
             tgt = tgt + self.dropout2(tgt2)
 
         # Feedforward
@@ -764,6 +788,8 @@ class MemoryConditionedLayer(nn.Module):
         tgt2 = self.ffn(tgt2)
         tgt = tgt + self.dropout3(tgt2)
 
+        if return_weights:
+            return tgt, self_attn, cross_attn
         return tgt
 
 
@@ -820,6 +846,7 @@ class MemoryConditionedTransformer(nn.Module):
         slots: torch.Tensor,
         memory: Optional[torch.Tensor] = None,
         memory_pos: Optional[torch.Tensor] = None,
+        return_weights: bool = False,
     ) -> torch.Tensor:
         """
         Predict next frame's slot initialization conditioned on memory.
@@ -828,19 +855,34 @@ class MemoryConditionedTransformer(nn.Module):
             slots: [B, n_slots, dim] - current frame's slots
             memory: [B, N_mem, memory_dim] - concatenated memory features
             memory_pos: [B, N_mem, memory_dim] - temporal positional encodings
+            return_weights: bool - whether to return attention weights
             
         Returns:
             predicted_slots: [B, n_slots, dim] - initialization for next frame
+            (optional) self_attn_list, cross_attn_list: attention weights from each layer
         """
         output = slots
+        self_attn_list = [] if return_weights else None
+        cross_attn_list = [] if return_weights else None
 
         for layer in self.layers:
             if self.use_memory:
-                output = layer(output, memory, memory_pos)
+                if return_weights:
+                    output, self_attn, cross_attn = layer(output, memory, memory_pos, return_weights=True)
+                    self_attn_list.append(self_attn)
+                    cross_attn_list.append(cross_attn)
+                else:
+                    output = layer(output, memory, memory_pos)
             else:
                 # Ablation: no memory, just self-attention
-                output = layer(output, memory=None, memory_pos=None)
+                if return_weights:
+                    output, self_attn, _ = layer(output, memory=None, memory_pos=None, return_weights=True)
+                    self_attn_list.append(self_attn)
+                else:
+                    output = layer(output, memory=None, memory_pos=None)
 
+        if return_weights:
+            return self.norm(output), self_attn_list, cross_attn_list
         return self.norm(output)
 
 

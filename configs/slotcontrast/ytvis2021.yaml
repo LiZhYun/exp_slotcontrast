@@ -80,13 +80,15 @@ model:
     slot_dim: ${globals.SLOT_DIM}
     n_iters: 2
     use_mlp: true
-    use_gru: false
-    use_ttt: true
+    use_gru: true
+    use_ttt: false
     use_ent: false
 
   latent_processor:
     first_step_corrector_args:
       n_iters: 3
+    # TTT3R: Adaptive state update based on predictor attention (default: false)
+    use_ttt3r: true
     
     # ============== MEMORY SYSTEM (Optional) ==============
     # Uncomment the following sections to enable SAM2-style temporal memory
@@ -117,10 +119,10 @@ model:
 
   predictor:
     # Standard predictor (no memory)
-    # name: networks.TransformerEncoder
-    # dim: ${globals.SLOT_DIM}
-    # n_blocks: 1
-    # n_heads: 4
+    name: networks.TransformerEncoder
+    dim: ${globals.SLOT_DIM}
+    n_blocks: 1
+    n_heads: 4
     
     # ============== MEMORY-CONDITIONED PREDICTOR (Optional) ==============
     # Uncomment to use memory-conditioned predictor with cross-attention

@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional, Union
 
 import torch
 from torch import nn
@@ -22,6 +22,7 @@ class LatentProcessor(nn.Module):
         memory_bank: Optional[nn.Module] = None,
         state_key: str = "slots",
         first_step_corrector_args: Optional[Dict[str, Any]] = None,
+        use_ttt3r: bool = False,
     ):
         super().__init__()
         self.corrector = corrector
@@ -29,6 +30,7 @@ class LatentProcessor(nn.Module):
         self.memory_encoder = memory_encoder
         self.memory_bank = memory_bank
         self.state_key = state_key
+        self.use_ttt3r = use_ttt3r
         if first_step_corrector_args is not None:
             self.first_step_corrector_args = first_step_corrector_args
         else:
@@ -86,20 +88,32 @@ class LatentProcessor(nn.Module):
             memory, memory_pos = self.memory_bank.get_memories(time_step, training=self.training)
 
         # 4. PREDICT: Generate initialization for NEXT frame
+        attn_list = None
         if self.predictor:
-            # Check if predictor supports memory
-            if (
+            use_memory = (
                 hasattr(self.predictor, "use_memory")
                 and getattr(self.predictor, "use_memory", False)
                 and memory is not None
-            ):
-                # Predict with memory conditioning
-                predicted_state = self.predictor(updated_state, memory, memory_pos)
+            )
+            if use_memory:
+                result = self.predictor(
+                    updated_state, memory, memory_pos, return_weights=self.use_ttt3r
+                )
             else:
-                # Standard prediction without memory
-                predicted_state = self.predictor(updated_state)
+                result = self.predictor(updated_state, return_weights=self.use_ttt3r)
+            
+            # Parse result based on return_weights
+            if self.use_ttt3r and isinstance(result, tuple):
+                predicted_state, attn_list = result[0], result[-1]
+            else:
+                predicted_state = result if not isinstance(result, tuple) else result[0]
+            
+            # TTT3R: Adaptive update based on attention
+            if self.use_ttt3r and time_step is not None and time_step > 0 and attn_list is not None:
+                predicted_state = self._apply_ttt3r_update(
+                    updated_state, predicted_state, attn_list
+                )
         else:
-            # Just pass updated_state along as prediction
             predicted_state = updated_state
 
         return {
@@ -107,6 +121,34 @@ class LatentProcessor(nn.Module):
             "state_predicted": predicted_state,
             "corrector": corrector_output,
         }
+
+    def _apply_ttt3r_update(
+        self,
+        current_state: torch.Tensor,
+        predicted_state: torch.Tensor,
+        attn_list: List[torch.Tensor],
+    ) -> torch.Tensor:
+        """Apply TTT3R adaptive update based on attention weights.
+        
+        Following TTT3R: use mean attention as relevance score.
+        Higher attention = more relevant = larger update weight.
+        """
+        # attn_list: list of [B, n_slots, n_keys] from each layer
+        if len(attn_list) == 0 or all(a is None for a in attn_list):
+            return predicted_state
+        
+        # Stack and rearrange: [n_layers, B, n_slots, n_keys] -> [B, n_slots, n_keys, n_layers]
+        attn_stack = torch.stack([a for a in attn_list if a is not None], dim=0)
+        attn_stack = attn_stack.permute(1, 2, 3, 0)  # [B, n_slots, n_keys, n_layers]
+        
+        # Mean over keys and layers: [B, n_slots]
+        state_relevance = attn_stack.mean(dim=(-1, -2))
+        
+        # Sigmoid scaling and broadcast: [B, n_slots, 1]
+        update_weight = torch.sigmoid(state_relevance).unsqueeze(-1)
+        
+        # Adaptive blend: predicted_state * weight + current_state * (1 - weight)
+        return predicted_state * update_weight + current_state * (1 - update_weight)
 
 
 class MapOverTime(nn.Module):
