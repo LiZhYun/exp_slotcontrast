@@ -1,4 +1,5 @@
 import argparse
+from datetime import datetime
 import logging
 import os
 import pathlib
@@ -32,6 +33,7 @@ parser.add_argument(
     "--no-interactive", action="store_true", help="If running in non-interactive environment"
 )
 parser.add_argument("--no-tensorboard", action="store_true", help="Do not write tensorboard logs")
+parser.add_argument("--no-wandb", action="store_true", help="Do not write wandb logs")
 parser.add_argument(
     "--check-validation", action="store_true", help="Run correctness checks on data used during eval"
 )
@@ -87,7 +89,7 @@ def _setup_callbacks(args, config, log_path: pathlib.Path, dataset=None) -> Dict
     return callbacks
 
 
-def _setup_loggers(args, log_path: pathlib.Path) -> Dict[str, pl.loggers.logger.Logger]:
+def _setup_loggers(args, config, log_path: pathlib.Path) -> Dict[str, pl.loggers.logger.Logger]:
     if args.dry:
         return {}
 
@@ -101,6 +103,14 @@ def _setup_loggers(args, log_path: pathlib.Path) -> Dict[str, pl.loggers.logger.
     # CSV logs go to <log_dir>/<metrics_subdir>/version_N/metrics.csv, where N is the number of
     # restarts of the job
     loggers["csv"] = pl.loggers.CSVLogger(save_dir=log_path, name=METRICS_SUBDIR)
+
+    if not args.no_wandb:
+        loggers["wandb"] = pl.loggers.WandbLogger(
+            project=config.get("experiment_group", "slotcontrast"),
+            # name is exp name + date-time
+            name=f"{config.get('experiment_name', None)}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
+            save_dir=log_path,
+        )
 
     return loggers
 
@@ -241,7 +251,7 @@ def main(args, config_overrides=None):
     model = models.build(config.model, config.optimizer, train_metrics, val_metrics)
 
     callbacks = _setup_callbacks(args, config, log_path, dataset)
-    loggers = _setup_loggers(args, log_path)
+    loggers = _setup_loggers(args, config, log_path)
     trainer_config = _setup_trainer_config(config.setdefault("trainer", {}))
 
     # Save the final configuration
