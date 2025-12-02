@@ -110,6 +110,7 @@ def _setup_loggers(args, config, log_path: pathlib.Path) -> Dict[str, pl.loggers
             # name is exp name + date-time
             name=f"{config.get('experiment_name', None)}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
             save_dir=log_path,
+            log_model=False,  # Don't log model checkpoints to wandb
         )
 
     return loggers
@@ -260,6 +261,10 @@ def main(args, config_overrides=None):
 
     if "tensorboard" in loggers:
         loggers["tensorboard"].log_hyperparams(config)
+
+    if "wandb" in loggers:
+        # Log hyperparameters to wandb
+        loggers["wandb"].log_hyperparams(OmegaConf.to_container(config, resolve=True))
 
     log_info(f"Configuration:\n{OmegaConf.to_yaml(config, resolve=True)}")
 
