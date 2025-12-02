@@ -19,7 +19,7 @@ export TORCH_EXTENSIONS_DIR=$WRKDIR/torch_extensions
 
 source activate slotcontrast
 
-DATA_DIR="/scratch/work/liz23/POST3R/post3r/data"
+DATA_DIR="/scratch/work/liz23/slotcontrast/data"
 OUTPUT_DIR="/scratch/work/liz23/slotcontrast/logs"
 
 srun python slotcontrast/train.py "configs/slotcontrast/ytvis2021.yaml" \
