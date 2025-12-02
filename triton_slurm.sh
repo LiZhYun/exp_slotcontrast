@@ -19,15 +19,17 @@ export TORCH_EXTENSIONS_DIR=$WRKDIR/torch_extensions
 
 source activate slotcontrast
 
+export PYTHONPATH="${PWD}:$PYTHONPATH"
+
 DATA_DIR="/scratch/work/liz23/slotcontrast/data"
 OUTPUT_DIR="/scratch/work/liz23/slotcontrast/logs"
 
 srun python slotcontrast/train.py "configs/slotcontrast/ytvis2021.yaml" \
-        --data-dir ${DATA_DIR} \
-        --log-dir ${OUTPUT_DIR} \
         "experiment_name=slotcontrast_gated_attention_grouper_w_contrast" \
         "model.latent_processor.use_ttt3r=false" \
         "model.grouper.use_gated=true" \
         "model.grouper.use_ttt=false" \
         "model.grouper.use_gru=false" \
         "model.loss_weights.loss_ss=0.5" \
+        --data-dir ${DATA_DIR} \
+        --log-dir ${OUTPUT_DIR} \
