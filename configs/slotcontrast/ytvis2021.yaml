@@ -8,7 +8,7 @@ globals:
   FEAT_DIM: 768
   NUM_PATCHES: 1369
   NUM_GPUS: 1
-  BATCH_SIZE_PER_GPU: 4
+  BATCH_SIZE_PER_GPU: 64
   TOTAL_BATCH_SIZE: "${mul: ${.NUM_GPUS}, ${.BATCH_SIZE_PER_GPU}}"
   BASE_LR: 0.0001
 
@@ -89,7 +89,7 @@ model:
     first_step_corrector_args:
       n_iters: 3
     # TTT3R: Adaptive state update based on predictor attention (default: false)
-    use_ttt3r: true
+    use_ttt3r: false
     
     # ============== MEMORY SYSTEM (Optional) ==============
     # Uncomment the following sections to enable SAM2-style temporal memory

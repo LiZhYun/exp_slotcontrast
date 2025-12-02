@@ -3,9 +3,9 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=12
-#SBATCH --mem=32G
+#SBATCH --mem=64G
 #SBATCH --time=0-20:00:00
-#SBATCH --gres=gpu:a100:1
+#SBATCH --gres=gpu:h200:1
 #SBATCH --output=logs/train_%j.out
 #SBATCH --error=logs/train_%j.err
 
@@ -25,3 +25,9 @@ OUTPUT_DIR="/scratch/work/liz23/slotcontrast/logs"
 srun python slotcontrast/train.py "configs/slotcontrast/ytvis2021.yaml" \
         --data-dir ${DATA_DIR} \
         --log-dir ${OUTPUT_DIR} \
+        "experiment_name=slotcontrast_gated_attention_grouper_w_contrast" \
+        "model.latent_processor.use_ttt3r=false" \
+        "model.grouper.use_gated=true" \
+        "model.grouper.use_ttt=false" \
+        "model.grouper.use_gru=false" \
+        "model.loss_weights.loss_ss=0.5" \
