@@ -552,6 +552,7 @@ class TransformerEncoderLayer(nn.TransformerEncoderLayer):
         batch_first: bool = False,
         norm_first: bool = False,
         initial_residual_scale: Optional[float] = None,
+        use_gated: bool = False,
         device=None,
         dtype=None,
     ):
@@ -577,6 +578,10 @@ class TransformerEncoderLayer(nn.TransformerEncoderLayer):
             attn_drop=dropout,
             proj_drop=dropout,
         )
+
+        self.use_gated = use_gated
+        if use_gated:
+            self.gate_proj = nn.Linear(d_model, d_model, bias=True)
 
         if initial_residual_scale is not None:
             self.scale1 = utils.LayerScale(d_model, init_values=initial_residual_scale)
@@ -626,25 +631,24 @@ class TransformerEncoderLayer(nn.TransformerEncoderLayer):
                 residual, attn = self._sa_block(
                     self.norm1(x), src_mask, src_key_padding_mask, keys=memory, values=memory, return_weights=True
                 )
-                x = x + self.scale1(residual)
             else:
-                x = x + self.scale1(
-                    self._sa_block(
-                        self.norm1(x), src_mask, src_key_padding_mask, keys=memory, values=memory
-                    )
+                residual = self._sa_block(
+                    self.norm1(x), src_mask, src_key_padding_mask, keys=memory, values=memory
                 )
+            if self.use_gated:
+                gate = torch.sigmoid(self.gate_proj(x))
+                residual = residual * gate
+            x = x + self.scale1(residual)
             x = x + self.scale2(self._ff_block(self.norm2(x)))
         else:
             if return_weights:
                 residual, attn = self._sa_block(x, src_mask, src_key_padding_mask, keys=memory, values=memory, return_weights=True)
-                x = self.norm1(x + self.scale1(residual))
             else:
-                x = self.norm1(
-                    x
-                    + self.scale1(
-                        self._sa_block(x, src_mask, src_key_padding_mask, keys=memory, values=memory)
-                    )
-                )
+                residual = self._sa_block(x, src_mask, src_key_padding_mask, keys=memory, values=memory)
+            if self.use_gated:
+                gate = torch.sigmoid(self.gate_proj(x))
+                residual = residual * gate
+            x = self.norm1(x + self.scale1(residual))
             x = self.norm2(x + self.scale2(self._ff_block(x)))
 
         if return_weights:
@@ -665,6 +669,7 @@ class TransformerEncoder(nn.Module):
         activation: Union[str, Callable[[torch.Tensor], torch.Tensor]] = "relu",
         hidden_dim: Optional[int] = None,
         initial_residual_scale: Optional[float] = None,
+        use_gated: bool = False,
         frozen: bool = False,
     ):
         super().__init__()
@@ -687,6 +692,7 @@ class TransformerEncoder(nn.Module):
                     batch_first=True,
                     norm_first=True,
                     initial_residual_scale=initial_residual_scale,
+                    use_gated=use_gated,
                 )
                 for _ in range(n_blocks)
             ]
@@ -731,9 +737,11 @@ class MemoryConditionedLayer(nn.Module):
         dropout: float,
         activation: str,
         use_memory: bool = True,
+        use_gated: bool = False,
     ):
         super().__init__()
         self.use_memory = use_memory
+        self.use_gated = use_gated
 
         # Self-attention (always present)
         self.self_attn = nn.MultiheadAttention(
@@ -741,6 +749,9 @@ class MemoryConditionedLayer(nn.Module):
         )
         self.norm1 = nn.LayerNorm(dim)
         self.dropout1 = nn.Dropout(dropout)
+
+        if use_gated:
+            self.gate_proj_self = nn.Linear(dim, dim, bias=True)
 
         # Cross-attention to memory (conditional)
         if use_memory:
@@ -750,6 +761,8 @@ class MemoryConditionedLayer(nn.Module):
             )
             self.norm2 = nn.LayerNorm(dim)
             self.dropout2 = nn.Dropout(dropout)
+            if use_gated:
+                self.gate_proj_cross = nn.Linear(dim, dim, bias=True)
 
         # Feedforward (always present)
         self.ffn = nn.Sequential(
@@ -772,16 +785,23 @@ class MemoryConditionedLayer(nn.Module):
         # Self-attention
         tgt2 = self.norm1(tgt)
         tgt2, self_attn = self.self_attn(tgt2, tgt2, tgt2, need_weights=return_weights)
-        tgt = tgt + self.dropout1(tgt2)
+        tgt2 = self.dropout1(tgt2)
+        if self.use_gated:
+            gate = torch.sigmoid(self.gate_proj_self(tgt))
+            tgt2 = tgt2 * gate
+        tgt = tgt + tgt2
 
         # Cross-attention to memory (if enabled and memory available)
         cross_attn = None
         if self.use_memory and memory is not None:
             tgt2 = self.norm2(tgt)
-            # Add temporal positional encoding to keys
             memory_k = memory + memory_pos if memory_pos is not None else memory
             tgt2, cross_attn = self.cross_attn(tgt2, memory_k, memory, need_weights=return_weights)
-            tgt = tgt + self.dropout2(tgt2)
+            tgt2 = self.dropout2(tgt2)
+            if self.use_gated:
+                gate = torch.sigmoid(self.gate_proj_cross(tgt))
+                tgt2 = tgt2 * gate
+            tgt = tgt + tgt2
 
         # Feedforward
         tgt2 = self.norm3(tgt)
@@ -803,6 +823,7 @@ class MemoryConditionedTransformer(nn.Module):
         n_heads: int,
         memory_dim: Optional[int] = None,
         use_memory: bool = True,
+        use_gated: bool = False,
         dropout: float = 0.0,
         activation: str = "relu",
         hidden_dim: Optional[int] = None,
@@ -830,6 +851,7 @@ class MemoryConditionedTransformer(nn.Module):
                     dropout=dropout,
                     activation=activation,
                     use_memory=use_memory,
+                    use_gated=use_gated,
                 )
                 for _ in range(n_blocks)
             ]
