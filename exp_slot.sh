@@ -20,6 +20,9 @@ CONFIGS=(
 
     "ttt3r_predictor_w_contrast true false false false true 0.5"
     "ttt3r_predictor_wo_contrast true false false false true 0.0"
+
+    "ttt3r_grouper_predictor_w_contrast true false false true false 0.5"
+    "ttt3r_grouper_predictor_wo_contrast true false false true false 0.0"
 )
 
 for config in "${CONFIGS[@]}"; do
