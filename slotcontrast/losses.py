@@ -229,3 +229,33 @@ class EntropyLoss(Loss):
     
     def forward(self, entropy_loss: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         return entropy_loss
+
+
+class CycleConsistencyLoss(Loss):
+    """Latent Cycle Consistency Loss for re-slotting.
+    
+    Computes MSE between real slots S_t and cycle slots S'_t obtained by
+    re-slotting the reconstructed features F'_t with the same initial queries.
+    """
+    def __init__(
+        self,
+        pred_key: str = "processor.cycle_slots",
+        target_key: str = "processor.corrector.slots",
+        **kwargs,
+    ):
+        kwargs.pop('video_inputs', None)
+        kwargs.pop('patch_inputs', None)
+        kwargs.pop('keep_input_dim', None)
+        super().__init__(pred_key, target_key, video_inputs=False, patch_inputs=False, keep_input_dim=True, **kwargs)
+        self.criterion = nn.MSELoss()
+    
+    def get_prediction(self, outputs: Dict[str, Any]) -> torch.Tensor:
+        return utils.read_path(outputs, elements=self.pred_path)
+    
+    def get_target(self, inputs: Dict[str, Any], outputs: Dict[str, Any]) -> torch.Tensor:
+        # Target is the real slots, detached to stop gradients
+        target = utils.read_path(outputs, elements=self.target_path)
+        return target.detach()
+    
+    def forward(self, cycle_slots: torch.Tensor, real_slots: torch.Tensor) -> torch.Tensor:
+        return self.criterion(cycle_slots, real_slots)

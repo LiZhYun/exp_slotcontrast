@@ -134,6 +134,13 @@ def build(
     else:
         masks_to_visualize = "decoder"
 
+    # Check if cycle consistency loss is enabled
+    use_cycle_consistency = (
+        model_config.losses is not None 
+        and "loss_cycle" in model_config.losses
+        and model_config.get("loss_weights", {}).get("loss_cycle", 0.0) != 0.0
+    )
+
     model = ObjectCentricModel(
         optimizer_builder,
         initializer,
@@ -152,6 +159,7 @@ def build(
         visualize=model_config.get("visualize", False),
         visualize_every_n_steps=model_config.get("visualize_every_n_steps", 1000),
         masks_to_visualize=masks_to_visualize,
+        use_cycle_consistency=use_cycle_consistency,
     )
 
     if model_config.load_weights:
@@ -181,6 +189,7 @@ class ObjectCentricModel(pl.LightningModule):
         visualize: bool = False,
         visualize_every_n_steps: Optional[int] = None,
         masks_to_visualize: Union[str, List[str]] = "decoder",
+        use_cycle_consistency: bool = False,
     ):
         super().__init__()
         self.optimizer_builder = optimizer_builder
@@ -190,6 +199,7 @@ class ObjectCentricModel(pl.LightningModule):
         self.decoder = decoder
         self.target_encoder = target_encoder
         self.dynamics_predictor = dynamics_predictor
+        self.use_cycle_consistency = use_cycle_consistency
 
         if loss_weights is not None:
             # Filter out losses that are not used
@@ -269,6 +279,11 @@ class ObjectCentricModel(pl.LightningModule):
             "decoder": decoder_output,
         }
 
+        # Cycle Consistency: Re-slot the reconstructed features
+        if self.use_cycle_consistency:
+            cycle_slots = self._compute_cycle_slots(processor_output, decoder_output)
+            outputs["processor"]["cycle_slots"] = cycle_slots
+
         if self.dynamics_predictor:
             outputs["dynamics_predictor"] = self.dynamics_predictor(slots)
             predicted_slots = outputs["dynamics_predictor"].get("next_state")
@@ -281,6 +296,63 @@ class ObjectCentricModel(pl.LightningModule):
         outputs["targets"] = self.get_targets(inputs, outputs)
 
         return outputs
+
+    def _compute_cycle_slots(
+        self, processor_output: Dict[str, Any], decoder_output: Dict[str, Any]
+    ) -> torch.Tensor:
+        """Compute cycle slots by re-slotting reconstructed features.
+        
+        Takes the reconstructed features F'_t from decoder and performs slot attention
+        again using the same initial queries to get cycle slots S'_t.
+        
+        Note: Decoder outputs features in DINO space (768-dim), so we need to 
+        transform them to slot space (64-dim) using the encoder's output_transform.
+        """
+        # Get reconstructed features from decoder
+        recon_features = decoder_output["reconstruction"]  # [B, T, P, D_feat] or [B, P, D_feat]
+        
+        # Get initial queries used in the original pass
+        initial_queries = processor_output["initial_queries"]  # [B, T, K, D_slot] or [B, K, D_slot]
+        
+        # Handle video vs image case
+        is_video = recon_features.ndim == 4
+        
+        if is_video:
+            # Video case: recon_features is [B, T, P, D_feat], initial_queries is [B, T, K, D_slot]
+            B, T, P, D_feat = recon_features.shape
+            _, _, K, slot_dim = initial_queries.shape
+            
+            # Flatten time dimension for batch processing
+            recon_flat = recon_features.flatten(0, 1)  # [B*T, P, D_feat]
+            queries_flat = initial_queries.flatten(0, 1)  # [B*T, K, D_slot]
+            
+            # Transform reconstructed features to slot space using encoder's output_transform
+            # The encoder is wrapped in MapOverTime, so access the inner module
+            output_transform = self.encoder.module.output_transform
+            if output_transform is not None:
+                recon_flat = output_transform(recon_flat)  # [B*T, P, D_slot]
+            
+            # Get the corrector (grouper) - it's wrapped in ScanOverTime -> LatentProcessor
+            corrector = self.processor.module.corrector
+            
+            # Perform slot attention on transformed reconstructed features
+            cycle_output = corrector(queries_flat, recon_flat)
+            cycle_slots_flat = cycle_output["slots"]  # [B*T, K, D_slot]
+            
+            # Reshape back to video format
+            cycle_slots = cycle_slots_flat.unflatten(0, (B, T))  # [B, T, K, D_slot]
+        else:
+            # Image case: recon_features is [B, P, D_feat], initial_queries is [B, K, D_slot]
+            # Transform reconstructed features to slot space
+            output_transform = self.encoder.output_transform
+            if output_transform is not None:
+                recon_features = output_transform(recon_features)
+            
+            corrector = self.processor.corrector
+            cycle_output = corrector(initial_queries, recon_features)
+            cycle_slots = cycle_output["slots"]
+        
+        return cycle_slots
 
     def process_masks(
         self,

@@ -23,6 +23,7 @@ class LatentProcessor(nn.Module):
         state_key: str = "slots",
         first_step_corrector_args: Optional[Dict[str, Any]] = None,
         use_ttt3r: bool = False,
+        use_cycle_consistency: bool = False,
     ):
         super().__init__()
         self.corrector = corrector
@@ -31,6 +32,7 @@ class LatentProcessor(nn.Module):
         self.memory_bank = memory_bank
         self.state_key = state_key
         self.use_ttt3r = use_ttt3r
+        self.use_cycle_consistency = use_cycle_consistency
         if first_step_corrector_args is not None:
             self.first_step_corrector_args = first_step_corrector_args
         else:
@@ -116,11 +118,14 @@ class LatentProcessor(nn.Module):
         else:
             predicted_state = updated_state
 
-        return {
+        result = {
             "state": updated_state,
             "state_predicted": predicted_state,
             "corrector": corrector_output,
+            "initial_queries": state,  # Store for cycle consistency
         }
+
+        return result
 
     def _apply_ttt3r_update(
         self,
