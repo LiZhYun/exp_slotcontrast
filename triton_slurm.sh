@@ -3,12 +3,14 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=12
-#SBATCH --mem=64G
-#SBATCH --time=1-00:00:00
-#SBATCH --gres=gpu:h200_2g.35gb:1
-#SBATCH --partition=gpu-h200-35g-ia
+#SBATCH --mem=128G
+#SBATCH --time=2-00:00:00
+#SBATCH --gres=gpu:h200:1
 #SBATCH --output=logs/train_%j.out
 #SBATCH --error=logs/train_%j.err
+
+#--gres=gpu:h200_2g.35gb:1
+#--partition=gpu-h200-35g-ia
 
 module load mamba
 module load triton-dev/2025.1-gcc

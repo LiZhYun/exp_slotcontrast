@@ -86,6 +86,14 @@ class SlotAttention(nn.Module):
         updates = torch.einsum("bsf, bfd -> bsd", attn, values)
 
         if self.gru:
+            if self.use_ttt:
+                slot_relevance = attn.mean(dim=-1, keepdim=True)  # Average attention logits across features [b, s, 1]
+                update_weight = torch.sigmoid(slot_relevance)  # Scale to [0, 1]
+                updates = updates * update_weight + slots * (1 - update_weight)
+            elif self.use_gated:
+                gate_logits = self.gate_proj(slots)
+                gate_scores = torch.sigmoid(gate_logits)
+                updates = updates * gate_scores
             updated_slots = self.gru(updates.flatten(0, 1), slots.flatten(0, 1))
             slots = updated_slots.unflatten(0, slots.shape[:2])
         elif self.use_ttt:
