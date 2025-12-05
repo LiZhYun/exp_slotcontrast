@@ -140,6 +140,8 @@ def build(
         and "loss_cycle" in model_config.losses
         and model_config.get("loss_weights", {}).get("loss_cycle", 0.0) != 0.0
     )
+    # Window for temporal cross-consistency (0 = same-frame only)
+    temporal_cross_window = model_config.get("temporal_cross_window", 0)
 
     model = ObjectCentricModel(
         optimizer_builder,
@@ -160,6 +162,7 @@ def build(
         visualize_every_n_steps=model_config.get("visualize_every_n_steps", 1000),
         masks_to_visualize=masks_to_visualize,
         use_cycle_consistency=use_cycle_consistency,
+        temporal_cross_window=temporal_cross_window,
     )
 
     if model_config.load_weights:
@@ -190,6 +193,7 @@ class ObjectCentricModel(pl.LightningModule):
         visualize_every_n_steps: Optional[int] = None,
         masks_to_visualize: Union[str, List[str]] = "decoder",
         use_cycle_consistency: bool = False,
+        temporal_cross_window: int = 0,
     ):
         super().__init__()
         self.optimizer_builder = optimizer_builder
@@ -200,6 +204,7 @@ class ObjectCentricModel(pl.LightningModule):
         self.target_encoder = target_encoder
         self.dynamics_predictor = dynamics_predictor
         self.use_cycle_consistency = use_cycle_consistency
+        self.temporal_cross_window = temporal_cross_window
 
         if loss_weights is not None:
             # Filter out losses that are not used
@@ -279,10 +284,15 @@ class ObjectCentricModel(pl.LightningModule):
             "decoder": decoder_output,
         }
 
-        # Cycle Consistency: Re-slot the reconstructed features
+        # Cycle/Temporal Cross-Consistency: Re-slot the reconstructed features
+        # When window=0, this is same-frame cycle consistency
+        # When window>0, this includes cross-frame temporal consistency
         if self.use_cycle_consistency:
-            cycle_slots = self._compute_cycle_slots(processor_output, decoder_output)
+            cycle_slots, cycle_targets = self._compute_cycle_slots(
+                processor_output, decoder_output, window=self.temporal_cross_window if self.training else 0
+            )
             outputs["processor"]["cycle_slots"] = cycle_slots
+            outputs["processor"]["cycle_targets"] = cycle_targets
 
         if self.dynamics_predictor:
             outputs["dynamics_predictor"] = self.dynamics_predictor(slots)
@@ -298,52 +308,56 @@ class ObjectCentricModel(pl.LightningModule):
         return outputs
 
     def _compute_cycle_slots(
-        self, processor_output: Dict[str, Any], decoder_output: Dict[str, Any]
-    ) -> torch.Tensor:
-        """Compute cycle slots by re-slotting reconstructed features.
+        self, processor_output: Dict[str, Any], decoder_output: Dict[str, Any], window: int = 0
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Compute cycle/temporal cross-consistency slots.
         
-        Takes the reconstructed features F'_t from decoder and performs slot attention
-        again using the same initial queries to get cycle slots S'_t.
+        When window=0: Same-frame cycle consistency (queries from t, features from t)
+        When window>0: Temporal cross-consistency (queries from i, features from j, |i-j| <= window)
         
-        Note: Decoder outputs features in DINO space (768-dim), so we need to 
-        transform them to slot space (64-dim) using the encoder's output_transform.
+        Returns both cycle slots and detached target slots.
         """
-        # Get reconstructed features from decoder
         recon_features = decoder_output["reconstruction"]  # [B, T, P, D_feat] or [B, P, D_feat]
-        
-        # Get initial queries used in the original pass
         initial_queries = processor_output["initial_queries"]  # [B, T, K, D_slot] or [B, K, D_slot]
+        real_slots = processor_output["corrector"]["slots"]  # [B, T, K, D_slot] or [B, K, D_slot]
         
-        # Handle video vs image case
         is_video = recon_features.ndim == 4
         
         if is_video:
-            # Video case: recon_features is [B, T, P, D_feat], initial_queries is [B, T, K, D_slot]
             B, T, P, D_feat = recon_features.shape
-            _, _, K, slot_dim = initial_queries.shape
+            _, _, K, D_slot = initial_queries.shape
             
-            # Flatten time dimension for batch processing
-            recon_flat = recon_features.flatten(0, 1)  # [B*T, P, D_feat]
-            queries_flat = initial_queries.flatten(0, 1)  # [B*T, K, D_slot]
-            
-            # Transform reconstructed features to slot space using encoder's output_transform
-            # The encoder is wrapped in MapOverTime, so access the inner module
-            output_transform = self.encoder.module.output_transform
-            if output_transform is not None:
-                recon_flat = output_transform(recon_flat)  # [B*T, P, D_slot]
-            
-            # Get the corrector (grouper) - it's wrapped in ScanOverTime -> LatentProcessor
-            corrector = self.processor.module.corrector
-            
-            # Perform slot attention on transformed reconstructed features
-            cycle_output = corrector(queries_flat, recon_flat)
-            cycle_slots_flat = cycle_output["slots"]  # [B*T, K, D_slot]
-            
-            # Reshape back to video format
-            cycle_slots = cycle_slots_flat.unflatten(0, (B, T))  # [B, T, K, D_slot]
-        else:
-            # Image case: recon_features is [B, P, D_feat], initial_queries is [B, K, D_slot]
             # Transform reconstructed features to slot space
+            output_transform = self.encoder.module.output_transform
+            recon_flat = recon_features.flatten(0, 1)  # [B*T, P, D_feat]
+            if output_transform is not None:
+                recon_transformed = output_transform(recon_flat).view(B, T, P, -1)
+            else:
+                recon_transformed = recon_flat.view(B, T, P, -1)
+            
+            if window > 0:
+                # Temporal cross-consistency: random sampling within window
+                offsets = torch.randint(-window, window + 1, (B, T), device=recon_features.device)
+                j_indices = torch.arange(T, device=recon_features.device).unsqueeze(0).expand(B, T)
+                i_indices = (j_indices + offsets).clamp(0, T - 1)
+                
+                # Gather queries from time i
+                i_expanded = i_indices.view(B, T, 1, 1).expand(B, T, K, D_slot)
+                queries = torch.gather(initial_queries, dim=1, index=i_expanded)
+            else:
+                # Same-frame cycle consistency
+                queries = initial_queries
+            
+            # Flatten and run slot attention
+            queries_flat = queries.flatten(0, 1)
+            features_flat = recon_transformed.flatten(0, 1)
+            
+            corrector = self.processor.module.corrector
+            cycle_output = corrector(queries_flat, features_flat)
+            cycle_slots = cycle_output["slots"].view(B, T, K, D_slot)
+            target_slots = real_slots.detach()
+        else:
+            # Image case: always same-frame
             output_transform = self.encoder.output_transform
             if output_transform is not None:
                 recon_features = output_transform(recon_features)
@@ -351,8 +365,9 @@ class ObjectCentricModel(pl.LightningModule):
             corrector = self.processor.corrector
             cycle_output = corrector(initial_queries, recon_features)
             cycle_slots = cycle_output["slots"]
+            target_slots = real_slots.detach()
         
-        return cycle_slots
+        return cycle_slots, target_slots
 
     def process_masks(
         self,

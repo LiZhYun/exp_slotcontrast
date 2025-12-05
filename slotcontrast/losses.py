@@ -232,15 +232,17 @@ class EntropyLoss(Loss):
 
 
 class CycleConsistencyLoss(Loss):
-    """Latent Cycle Consistency Loss for re-slotting.
+    """Cycle/Temporal Cross-Consistency Loss for re-slotting.
     
-    Computes MSE between real slots S_t and cycle slots S'_t obtained by
-    re-slotting the reconstructed features F'_t with the same initial queries.
+    When window=0: Same-frame cycle consistency
+    When window>0: Temporal cross-consistency with random sampling
+    
+    Computes MSE between cycle slots and target slots (detached).
     """
     def __init__(
         self,
         pred_key: str = "processor.cycle_slots",
-        target_key: str = "processor.corrector.slots",
+        target_key: str = "processor.cycle_targets",
         **kwargs,
     ):
         kwargs.pop('video_inputs', None)
@@ -253,9 +255,7 @@ class CycleConsistencyLoss(Loss):
         return utils.read_path(outputs, elements=self.pred_path)
     
     def get_target(self, inputs: Dict[str, Any], outputs: Dict[str, Any]) -> torch.Tensor:
-        # Target is the real slots, detached to stop gradients
-        target = utils.read_path(outputs, elements=self.target_path)
-        return target.detach()
+        return utils.read_path(outputs, elements=self.target_path)
     
-    def forward(self, cycle_slots: torch.Tensor, real_slots: torch.Tensor) -> torch.Tensor:
-        return self.criterion(cycle_slots, real_slots)
+    def forward(self, cycle_slots: torch.Tensor, target_slots: torch.Tensor) -> torch.Tensor:
+        return self.criterion(cycle_slots, target_slots)

@@ -30,6 +30,7 @@ model:
   input_type: video
   visualize: false
   visualize_every_n_steps: 10000
+  temporal_cross_window: 0  # 0=same-frame cycle, >0=temporal cross-consistency
   losses:
     loss_featrec:
       name: MSELoss
@@ -46,7 +47,7 @@ model:
     loss_cycle:
       name: CycleConsistencyLoss
       pred_key: processor.cycle_slots
-      target_key: processor.corrector.slots
+      target_key: processor.cycle_targets
     # loss_entropy:
     #   name: EntropyLoss
     #   pred_key: processor.corrector.entropy_loss
