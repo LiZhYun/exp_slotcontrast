@@ -289,7 +289,7 @@ class ObjectCentricModel(pl.LightningModule):
         # When window>0, this includes cross-frame temporal consistency
         if self.use_cycle_consistency:
             cycle_slots, cycle_targets = self._compute_cycle_slots(
-                processor_output, decoder_output, window=self.temporal_cross_window if self.training else 0
+                processor_output, decoder_output, window=self.temporal_cross_window
             )
             outputs["processor"]["cycle_slots"] = cycle_slots
             outputs["processor"]["cycle_targets"] = cycle_targets
@@ -326,6 +326,9 @@ class ObjectCentricModel(pl.LightningModule):
         if is_video:
             B, T, P, D_feat = recon_features.shape
             _, _, K, D_slot = initial_queries.shape
+            
+            # Ensure window size is valid
+            assert 0 <= window <= T - 1, f"Window size {window} must be in range [0, {T - 1}]"
             
             # Transform reconstructed features to slot space
             output_transform = self.encoder.module.output_transform
