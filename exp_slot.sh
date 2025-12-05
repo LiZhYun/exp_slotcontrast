@@ -1,41 +1,59 @@
 #!/bin/bash
 
 # Define experiment configurations
-# Format: "experiment_name use_ttt3r use_gated use_gated_predictor use_ttt use_gru loss_ss loss_cycle"
+# Format: "experiment_name use_ttt3r use_gated use_gated_predictor use_ttt use_gru loss_ss loss_cycle window_size"
 CONFIGS=(
-    # "baseline_w_contrast false false false false true 0.5 0.0"
-    # "baseline_wo_contrast false false false false true 0.0 0.0"
+    # "baseline_w_contrast false false false false true 0.5 0.0 0"
+    # "baseline_wo_contrast false false false false true 0.0 0.0 0"
 
-    # "gated_attention_grouper_w_contrast false true false false false 0.5 0.0" # may work
-    # "gated_attention_grouper_wo_contrast false true false false false 0.0 0.0"
+    # "gated_attention_grouper_w_contrast false true false false false 0.5 0.0 0" # may work
+    # "gated_attention_grouper_wo_contrast false true false false false 0.0 0.0 0"
 
-#     "gated_attention_grouper_gru_w_contrast false true false false true 0.5 0.0"
+#     "gated_attention_grouper_gru_w_contrast false true false false true 0.5 0.0 0"
 
-    # "gated_attention_predictor_w_contrast false false true false true 0.5 0.0"
-    # "gated_attention_predictor_wo_contrast false false true false true 0.0 0.0" 
+    # "gated_attention_predictor_w_contrast false false true false true 0.5 0.0 0"
+    # "gated_attention_predictor_wo_contrast false false true false true 0.0 0.0 0"
 
-    # "gated_attention_grouper_predictor_w_contrast false true true false false 0.5 0.0" # may work
-    # "gated_attention_grouper_predictor_wo_contrast false true true false false 0.0 0.0"
+    # "gated_attention_grouper_predictor_w_contrast false true true false false 0.5 0.0 0" # may work
+    # "gated_attention_grouper_predictor_wo_contrast false true true false false 0.0 0.0 0"
 
-#     "gated_attention_grouper_predictor_gru_w_contrast false true true false true 0.5 0.0"
+#     "gated_attention_grouper_predictor_gru_w_contrast false true true false true 0.5 0.0 0"
 
-    # "ttt3r_grouper_w_contrast false false false true false 0.5 0.0"
-    # "ttt3r_grouper_wo_contrast false false false true false 0.0 0.0"
+    # "ttt3r_grouper_w_contrast false false false true false 0.5 0.0 0"
+    # "ttt3r_grouper_wo_contrast false false false true false 0.0 0.0 0"
 
-    # "ttt3r_predictor_w_contrast true false false false true 0.5 0.0"
-    # "ttt3r_predictor_wo_contrast true false false false true 0.0 0.0"
+    # "ttt3r_predictor_w_contrast true false false false true 0.5 0.0 0"
+    # "ttt3r_predictor_wo_contrast true false false false true 0.0 0.0 0"
 
-    # "ttt3r_grouper_predictor_w_contrast true false false true false 0.5 0.0" # may work
-    # "ttt3r_grouper_predictor_wo_contrast true false false true false 0.0 0.0"
+    # "ttt3r_grouper_predictor_w_contrast true false false true false 0.5 0.0 0" # may work
+    # "ttt3r_grouper_predictor_wo_contrast true false false true false 0.0 0.0 0"
 
-#     "ttt3r_grouper_predictor_gru_w_contrast true false false true true 0.5 0.0"
+#     "ttt3r_grouper_predictor_gru_w_contrast true false false true true 0.5 0.0 0"
 
-    "loss_cycle_w_contrast false false false false true 0.5 0.5"
-    "loss_cycle_wo_contrast false false false false true 0.0 0.5"
+#     "loss_cycle_w_contrast false false false false true 0.5 0.5 0"
+#     "loss_cycle_wo_contrast false false false false true 0.0 0.5 0"
+
+    "loss_cycle_w_contrast false false false false true 0.5 1.0 0"
+    "loss_cycle_w_contrast false false false false true 0.5 0.8 0"
+    "loss_cycle_w_contrast false false false false true 0.5 0.2 0"
+    "loss_cycle_w_contrast false false false false true 0.5 0.1 0"
+
+    "loss_cycle_wo_contrast false false false false true 0.0 1.0 0"
+    "loss_cycle_wo_contrast false false false false true 0.0 0.8 0"
+    "loss_cycle_wo_contrast false false false false true 0.0 0.2 0"
+    "loss_cycle_wo_contrast false false false false true 0.0 0.1 0"
+
+    "window_loss_cycle_w_contrast false false false false true 0.5 0.5 1"
+    "window_loss_cycle_w_contrast false false false false true 0.5 0.5 2"
+    "window_loss_cycle_w_contrast false false false false true 0.5 0.5 3"
+
+    "window_loss_cycle_wo_contrast false false false false true 0.0 0.5 1"
+    "window_loss_cycle_wo_contrast false false false false true 0.0 0.5 2"
+    "window_loss_cycle_wo_contrast false false false false true 0.0 0.5 3"
 )
 
 for config in "${CONFIGS[@]}"; do
-    read -r exp_name use_ttt3r use_gated use_gated_predictor use_ttt use_gru loss_ss loss_cycle <<< "$config"
+    read -r exp_name use_ttt3r use_gated use_gated_predictor use_ttt use_gru loss_ss loss_cycle window_size <<< "$config"
 
     echo "Submitting: $exp_name"
     
@@ -47,7 +65,8 @@ for config in "${CONFIGS[@]}"; do
         "model.grouper.use_ttt=${use_ttt}" \
         "model.grouper.use_gru=${use_gru}" \
         "model.loss_weights.loss_ss=${loss_ss}" \
-        "model.loss_weights.loss_cycle=${loss_cycle}"
+        "model.loss_weights.loss_cycle=${loss_cycle}" \
+        "model.temporal_cross_window=${window_size}"
 done
 
 echo "All jobs submitted!"
