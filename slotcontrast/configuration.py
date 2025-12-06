@@ -31,6 +31,7 @@ class ModelConfig:
     load_weights: Optional[str] = None
     modules_to_load: Optional[Dict[str, str]] = None
     temporal_cross_window: int = 0  # 0=same-frame cycle, >0=temporal cross-consistency
+    temporal_cross_mode: str = "both"  # "both"=[-win,+win], "backward"=[-win,0], "forward"=[0,+win]
 
 
 @dataclass

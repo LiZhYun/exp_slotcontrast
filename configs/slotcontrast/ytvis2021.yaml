@@ -31,6 +31,7 @@ model:
   visualize: false
   visualize_every_n_steps: 10000
   temporal_cross_window: 0  # 0=same-frame cycle, 0<=temporal cross-consistency<=chunk_size-1
+  temporal_cross_mode: "both"  # or "backward" or "forward"
   losses:
     loss_featrec:
       name: MSELoss

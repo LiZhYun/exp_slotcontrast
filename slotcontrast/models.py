@@ -142,6 +142,7 @@ def build(
     )
     # Window for temporal cross-consistency (0 = same-frame only)
     temporal_cross_window = model_config.get("temporal_cross_window", 0)
+    temporal_cross_mode = model_config.get("temporal_cross_mode", "both")
 
     model = ObjectCentricModel(
         optimizer_builder,
@@ -163,6 +164,7 @@ def build(
         masks_to_visualize=masks_to_visualize,
         use_cycle_consistency=use_cycle_consistency,
         temporal_cross_window=temporal_cross_window,
+        temporal_cross_mode=temporal_cross_mode,
     )
 
     if model_config.load_weights:
@@ -194,6 +196,7 @@ class ObjectCentricModel(pl.LightningModule):
         masks_to_visualize: Union[str, List[str]] = "decoder",
         use_cycle_consistency: bool = False,
         temporal_cross_window: int = 0,
+        temporal_cross_mode: str = "both",
     ):
         super().__init__()
         self.optimizer_builder = optimizer_builder
@@ -205,6 +208,7 @@ class ObjectCentricModel(pl.LightningModule):
         self.dynamics_predictor = dynamics_predictor
         self.use_cycle_consistency = use_cycle_consistency
         self.temporal_cross_window = temporal_cross_window
+        self.temporal_cross_mode = temporal_cross_mode
 
         if loss_weights is not None:
             # Filter out losses that are not used
@@ -289,7 +293,9 @@ class ObjectCentricModel(pl.LightningModule):
         # When window>0, this includes cross-frame temporal consistency
         if self.use_cycle_consistency:
             cycle_slots, cycle_targets = self._compute_cycle_slots(
-                processor_output, decoder_output, window=self.temporal_cross_window
+                processor_output, decoder_output, 
+                window=self.temporal_cross_window,
+                mode=self.temporal_cross_mode
             )
             outputs["processor"]["cycle_slots"] = cycle_slots
             outputs["processor"]["cycle_targets"] = cycle_targets
@@ -308,12 +314,16 @@ class ObjectCentricModel(pl.LightningModule):
         return outputs
 
     def _compute_cycle_slots(
-        self, processor_output: Dict[str, Any], decoder_output: Dict[str, Any], window: int = 0
+        self, processor_output: Dict[str, Any], decoder_output: Dict[str, Any], 
+        window: int = 0, mode: str = "both"
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Compute cycle/temporal cross-consistency slots.
         
         When window=0: Same-frame cycle consistency (queries from t, features from t)
-        When window>0: Temporal cross-consistency (queries from i, features from j, |i-j| <= window)
+        When window>0: Temporal cross-consistency with mode:
+            - "both": queries from [t-window, t+window]
+            - "backward": queries from [t-window, t]
+            - "forward": queries from [t, t+window]
         
         Returns both cycle slots and detached target slots.
         """
@@ -329,6 +339,7 @@ class ObjectCentricModel(pl.LightningModule):
             
             # Ensure window size is valid
             assert 0 <= window <= T - 1, f"Window size {window} must be in range [0, {T - 1}]"
+            assert mode in ("both", "backward", "forward"), f"Mode must be 'both', 'backward', or 'forward', got '{mode}'"
             
             # Transform reconstructed features to slot space
             output_transform = self.encoder.module.output_transform
@@ -339,8 +350,17 @@ class ObjectCentricModel(pl.LightningModule):
                 recon_transformed = recon_flat.view(B, T, P, -1)
             
             if window > 0:
-                # Temporal cross-consistency: random sampling within window
-                offsets = torch.randint(-window, window + 1, (B, T), device=recon_features.device)
+                # Temporal cross-consistency: random sampling within window based on mode
+                if mode == "both":
+                    # Sample from [t-window, t+window]
+                    offsets = torch.randint(-window, window + 1, (B, T), device=recon_features.device)
+                elif mode == "backward":
+                    # Sample from [t-window, t]
+                    offsets = torch.randint(-window, 1, (B, T), device=recon_features.device)
+                else:  # mode == "forward"
+                    # Sample from [t, t+window]
+                    offsets = torch.randint(0, window + 1, (B, T), device=recon_features.device)
+                
                 j_indices = torch.arange(T, device=recon_features.device).unsqueeze(0).expand(B, T)
                 i_indices = (j_indices + offsets).clamp(0, T - 1)
                 
