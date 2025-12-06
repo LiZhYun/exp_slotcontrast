@@ -64,6 +64,8 @@ model:
     name: FixedLearnedInit
     n_slots: ${globals.NUM_SLOTS}
     dim: ${globals.SLOT_DIM}
+    saliency_mode: norm  # or 'entropy', 'variance'
+    init_mode: first_frame  # per_frame or first_frame
 
   encoder:
     backbone:

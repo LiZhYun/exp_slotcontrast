@@ -212,23 +212,28 @@ class ScanOverTime(nn.Module):
         self.pass_step = pass_step
 
     def forward(self, initial_state: torch.Tensor, inputs: torch.Tensor):
-        # initial_state: batch x ...
+        # initial_state: [B, n_slots, D] or [B, T, n_slots, D] for per-frame init
         # inputs: batch x n_frames x ...
         seq_len = inputs.shape[1]
+        per_frame_init = initial_state.ndim == 4  # [B, T, n_slots, D]
 
         # Clear memory bank at start of sequence
         if hasattr(self.module, "memory_bank") and self.module.memory_bank is not None:
             self.module.memory_bank.clear()
 
-        state = initial_state
+        state = initial_state[:, 0] if per_frame_init else initial_state
         outputs = []
         for t in range(seq_len):
+            # Use per-frame init if available, otherwise use predicted state
+            if per_frame_init:
+                state = initial_state[:, t]
             if self.pass_step:
                 output = self.module(state, inputs[:, t], t)
             else:
                 output = self.module(state, inputs[:, t])
             outputs.append(output)
-            state = output[self.next_state_key]
+            if not per_frame_init:
+                state = output[self.next_state_key]
 
         return merge_dict_trees(outputs, axis=1)
 
