@@ -246,8 +246,6 @@ class AdjustedRandIndex(Metric):
         n_true_classes_per_point = true_mask.sum(dim=-1)
         if not self.ignore_overlaps and torch.any(n_true_classes_per_point > 1.0):
             raise ValueError("There are overlaps in `true_mask`.")
-        if self.ignore_background and torch.any(n_true_classes_per_point != 1.0):
-            raise ValueError("`true_mask` is not one-hot")
 
         if self.ignore_overlaps:
             overlaps = n_true_classes_per_point > 1.0
@@ -404,8 +402,6 @@ class IntersectionOverUnion(Metric):
         n_true_classes_per_point = true_mask.sum(dim=-1)
         if not self.ignore_overlaps and torch.any(n_true_classes_per_point > 1.0):
             raise ValueError("There are overlaps in `true_mask`.")
-        if self.ignore_background and torch.any(n_true_classes_per_point != 1.0):
-            raise ValueError("`true_mask` is not one-hot")
         if self.ignore_overlaps:
             overlaps = n_true_classes_per_point > 1.0
             true_mask = true_mask.clone()

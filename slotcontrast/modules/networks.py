@@ -725,6 +725,183 @@ class TransformerEncoder(nn.Module):
         return x
 
 
+class CrossAttentionEncoderLayer(TransformerEncoderLayer):
+    """TransformerEncoderLayer with additional cross-attention block."""
+
+    def __init__(
+        self,
+        d_model: int,
+        nhead: int,
+        dim_feedforward: int = 2048,
+        dim_attn: Optional[int] = None,
+        dim_kv: Optional[int] = None,
+        qkv_bias: bool = True,
+        dropout: float = 0.1,
+        activation: Union[str, Callable[[torch.Tensor], torch.Tensor]] = torch.nn.functional.relu,
+        layer_norm_eps: float = 1e-5,
+        batch_first: bool = False,
+        norm_first: bool = False,
+        initial_residual_scale: Optional[float] = None,
+        use_gated: bool = False,
+        device=None,
+        dtype=None,
+    ):
+        super().__init__(
+            d_model, nhead, dim_feedforward, dim_attn, dim_kv, qkv_bias,
+            dropout, activation, layer_norm_eps, batch_first, norm_first,
+            initial_residual_scale, use_gated, device, dtype,
+        )
+        # Cross-attention components
+        self.cross_attn = Attention(
+            dim=d_model,
+            num_heads=nhead,
+            kdim=dim_kv,
+            vdim=dim_kv,
+            inner_dim=dim_attn,
+            qkv_bias=qkv_bias,
+            attn_drop=dropout,
+            proj_drop=dropout,
+        )
+        self.norm_ca = nn.LayerNorm(d_model, eps=layer_norm_eps)
+        self.dropout_ca = nn.Dropout(dropout)
+        if initial_residual_scale is not None:
+            self.scale_ca = utils.LayerScale(d_model, init_values=initial_residual_scale)
+        else:
+            self.scale_ca = nn.Identity()
+
+    def _ca_block(
+        self,
+        x: torch.Tensor,
+        memory: torch.Tensor,
+        attn_mask: Optional[torch.Tensor] = None,
+        key_padding_mask: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        x, _ = self.cross_attn(x, memory, memory, attn_mask=attn_mask, key_padding_mask=key_padding_mask)
+        return self.dropout_ca(x)
+
+    def forward(
+        self,
+        src: torch.Tensor,
+        src_mask: Optional[torch.Tensor] = None,
+        src_key_padding_mask: Optional[torch.Tensor] = None,
+        memory: Optional[torch.Tensor] = None,
+        cross_memory: Optional[torch.Tensor] = None,
+        return_weights: bool = False,
+    ) -> torch.Tensor:
+        x = src
+        attn = None
+        if self.norm_first:
+            # Cross-attention first (if cross_memory provided) - decoder-style
+            if cross_memory is not None:
+                x = x + self.scale_ca(self._ca_block(self.norm_ca(x), cross_memory))
+            # Self-attention
+            if return_weights:
+                residual, attn = self._sa_block(
+                    self.norm1(x), src_mask, src_key_padding_mask, keys=memory, values=memory, return_weights=True
+                )
+            else:
+                residual = self._sa_block(self.norm1(x), src_mask, src_key_padding_mask, keys=memory, values=memory)
+            if self.use_gated:
+                gate = torch.sigmoid(self.gate_proj(x))
+                residual = residual * gate
+            x = x + self.scale1(residual)
+            # FFN
+            x = x + self.scale2(self._ff_block(self.norm2(x)))
+        else:
+            # Cross-attention first (if cross_memory provided) - decoder-style
+            if cross_memory is not None:
+                x = self.norm_ca(x + self.scale_ca(self._ca_block(x, cross_memory)))
+            # Self-attention
+            if return_weights:
+                residual, attn = self._sa_block(x, src_mask, src_key_padding_mask, keys=memory, values=memory, return_weights=True)
+            else:
+                residual = self._sa_block(x, src_mask, src_key_padding_mask, keys=memory, values=memory)
+            if self.use_gated:
+                gate = torch.sigmoid(self.gate_proj(x))
+                residual = residual * gate
+            x = self.norm1(x + self.scale1(residual))
+            # FFN
+            x = self.norm2(x + self.scale2(self._ff_block(x)))
+
+        if return_weights:
+            return x, attn
+        return x
+
+
+class CrossAttentionPredictor(nn.Module):
+    """Predictor with cross-attention to per-frame initialized slots.
+    
+    Same structure as TransformerEncoder but uses CrossAttentionEncoderLayer.
+    """
+
+    def __init__(
+        self,
+        dim: int,
+        n_blocks: int = 2,
+        n_heads: int = 4,
+        qkv_dim: Optional[int] = None,
+        memory_dim: Optional[int] = None,
+        qkv_bias: bool = True,
+        dropout: float = 0.0,
+        activation: Union[str, Callable[[torch.Tensor], torch.Tensor]] = "relu",
+        hidden_dim: Optional[int] = None,
+        initial_residual_scale: Optional[float] = None,
+        use_gated: bool = False,
+        frozen: bool = False,
+    ):
+        super().__init__()
+        if hidden_dim is None:
+            hidden_dim = 4 * dim
+
+        self.blocks = nn.ModuleList([
+            CrossAttentionEncoderLayer(
+                dim, n_heads,
+                dim_feedforward=hidden_dim,
+                dim_attn=qkv_dim,
+                dim_kv=memory_dim,
+                qkv_bias=qkv_bias,
+                dropout=dropout,
+                activation=activation,
+                layer_norm_eps=1e-05,
+                batch_first=True,
+                norm_first=True,
+                initial_residual_scale=initial_residual_scale,
+                use_gated=use_gated,
+            )
+            for _ in range(n_blocks)
+        ])
+
+        # For detection in LatentProcessor
+        self.cross_attn = True
+
+        if frozen:
+            for param in self.parameters():
+                param.requires_grad = False
+
+    def forward(
+        self,
+        inp: torch.Tensor,
+        init_state: Optional[torch.Tensor] = None,
+        mask: Optional[torch.Tensor] = None,
+        key_padding_mask: Optional[torch.Tensor] = None,
+        memory: Optional[torch.Tensor] = None,
+        return_weights: bool = False,
+    ) -> torch.Tensor:
+        x = inp
+        attn_list = [] if return_weights else None
+
+        for block in self.blocks:
+            if return_weights:
+                x, attn = block(x, mask, key_padding_mask, memory, cross_memory=init_state, return_weights=True)
+                attn_list.append(attn)
+            else:
+                x = block(x, mask, key_padding_mask, memory, cross_memory=init_state)
+
+        if return_weights:
+            return x, attn_list
+        return x
+
+
 class MemoryConditionedLayer(nn.Module):
     """Single layer with self-attention and optional cross-attention to memory."""
 

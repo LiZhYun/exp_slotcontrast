@@ -39,7 +39,8 @@ class LatentProcessor(nn.Module):
             self.first_step_corrector_args = None
 
     def forward(
-        self, state: torch.Tensor, inputs: Optional[torch.Tensor], time_step: Optional[int] = None
+        self, state: torch.Tensor, inputs: Optional[torch.Tensor], time_step: Optional[int] = None,
+        init_state: Optional[torch.Tensor] = None
     ) -> Dict[str, torch.Tensor]:
         # state: batch x n_slots x slot_dim
         assert state.ndim == 3
@@ -97,9 +98,16 @@ class LatentProcessor(nn.Module):
                 and getattr(self.predictor, "use_memory", False)
                 and memory is not None
             )
+            # Check if predictor supports init_state (CrossAttentionPredictor)
+            use_init_state = hasattr(self.predictor, 'cross_attn') and init_state is not None
+            
             if use_memory:
                 result = self.predictor(
                     updated_state, memory, memory_pos, return_weights=self.use_ttt3r
+                )
+            elif use_init_state:
+                result = self.predictor(
+                    updated_state, init_state=init_state, return_weights=self.use_ttt3r
                 )
             else:
                 result = self.predictor(updated_state, return_weights=self.use_ttt3r)
@@ -224,16 +232,14 @@ class ScanOverTime(nn.Module):
         state = initial_state[:, 0] if per_frame_init else initial_state
         outputs = []
         for t in range(seq_len):
-            # Use per-frame init if available, otherwise use predicted state
-            if per_frame_init:
-                state = initial_state[:, t]
+            # Pass per-frame init for cross-attention predictor
+            init_state_t = initial_state[:, t] if per_frame_init else None
             if self.pass_step:
-                output = self.module(state, inputs[:, t], t)
+                output = self.module(state, inputs[:, t], t, init_state=init_state_t)
             else:
-                output = self.module(state, inputs[:, t])
+                output = self.module(state, inputs[:, t], init_state=init_state_t)
             outputs.append(output)
-            if not per_frame_init:
-                state = output[self.next_state_key]
+            state = output[self.next_state_key]
 
         return merge_dict_trees(outputs, axis=1)
 

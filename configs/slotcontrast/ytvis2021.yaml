@@ -61,7 +61,7 @@ model:
 
 
   initializer:
-    name: FixedLearnedInit
+    name: FixedLearnedInit # FixedLearnedInit or GreedyFeatureInit
     n_slots: ${globals.NUM_SLOTS}
     dim: ${globals.SLOT_DIM}
     saliency_mode: norm  # or 'entropy', 'variance'
@@ -129,7 +129,7 @@ model:
 
   predictor:
     # Standard predictor (no memory)
-    name: networks.TransformerEncoder
+    name: networks.TransformerEncoder # TransformerEncoder or CrossAttentionPredictor
     dim: ${globals.SLOT_DIM}
     n_blocks: 1
     n_heads: 4
@@ -153,6 +153,11 @@ val_metrics:
   ari:
     name: VideoARI
     ignore_background: false
+    pred_key: decoder_masks_hard
+    true_key: segmentations
+  fg_ari:
+    name: VideoARI
+    ignore_background: true
     pred_key: decoder_masks_hard
     true_key: segmentations
   image_ari:
