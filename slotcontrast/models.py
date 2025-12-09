@@ -215,12 +215,12 @@ class ObjectCentricModel(pl.LightningModule):
             assert (
                 loss_weights.keys() == loss_fns.keys()
             ), f"Loss weight keys {loss_weights.keys()} != {loss_fns.keys()}"
-            loss_fns_filtered = {k: loss for k, loss in loss_fns.items() if loss_weights[k] != 0.0}
-            loss_weights_filtered = {
-                k: loss for k, loss in loss_weights.items() if loss_weights[k] != 0.0
-            }
-            self.loss_fns = nn.ModuleDict(loss_fns_filtered)
-            self.loss_weights = loss_weights_filtered
+            # loss_fns_filtered = {k: loss for k, loss in loss_fns.items() if loss_weights[k] != 0.0}
+            # loss_weights_filtered = {
+            #     k: loss for k, loss in loss_weights.items() if loss_weights[k] != 0.0
+            # }
+            self.loss_fns = nn.ModuleDict(loss_fns)
+            self.loss_weights = loss_weights
         else:
             self.loss_fns = nn.ModuleDict(loss_fns)
             self.loss_weights = {}
