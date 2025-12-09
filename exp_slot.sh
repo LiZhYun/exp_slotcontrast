@@ -86,12 +86,33 @@ CONFIGS=(
     # "baseline_wo_contrast false false false false true 0.0 0.0 0 vit_block12 both GreedyFeatureInit first_frame"
     # "baseline_wo_contrast false false false false true 0.0 0.0 0 vit_block12 both GreedyFeatureInit per_frame"
 
-    "baseline_w_contrast false false false false true 0.5 0.0 0 vit_block12 both GreedyFeatureInit per_frame networks.CrossAttentionPredictor"
-    "baseline_wo_contrast false false false false true 0.0 0.0 0 vit_block12 both GreedyFeatureInit per_frame networks.CrossAttentionPredictor"
+    # "baseline_w_contrast false false false false true 0.5 0.0 0 vit_block12 both GreedyFeatureInit per_frame networks.CrossAttentionPredictor"
+    # "baseline_wo_contrast false false false false true 0.0 0.0 0 vit_block12 both GreedyFeatureInit per_frame networks.CrossAttentionPredictor"
     
+    # "baseline_w_contrast false false false false true 0.5 0.0 0 vit_block11 both FixedLearnedInit first_frame networks.TransformerEncoder"
 
-)
+    # "window_loss_cycle_w_contrast false false false false true 0.5 0.5 2 vit_block12 forward FixedLearnedInit first_frame networks.TransformerEncoder"
+    # "window_loss_cycle_wo_contrast false false false false true 0.0 0.5 2 vit_block12 backward FixedLearnedInit first_frame networks.TransformerEncoder"
+    # "window_loss_cycle_wo_contrast false false false false true 0.0 0.5 2 vit_block12 forward FixedLearnedInit first_frame networks.TransformerEncoder"
 
+    # "baseline_wo_contrast false false false false true 0.0 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
+    
+    # "baseline_wo_contrast false false false false true 0.0 0.0 0 vit_block12 both GreedyFeatureInit first_frame networks.TransformerEncoder"
+
+    "gated_attention_grouper_wo_contrast false true false false false 0.0 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
+    "gated_attention_predictor_w_contrast false false true false true 0.5 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
+    "gated_attention_predictor_wo_contrast false false true false true 0.0 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
+    "gated_attention_grouper_predictor_wo_contrast false true true false false 0.0 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
+
+    "ttt3r_grouper_w_contrast false false false true false 0.5 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
+    "ttt3r_grouper_wo_contrast false false false true false 0.0 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
+    "ttt3r_predictor_w_contrast true false false false true 0.5 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
+    "ttt3r_predictor_wo_contrast true false false false true 0.0 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
+    "ttt3r_grouper_predictor_wo_contrast true false false true false 0.0 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
+
+    )
+
+    
 for config in "${CONFIGS[@]}"; do
     read -r exp_name use_ttt3r use_gated use_gated_predictor use_ttt use_gru loss_ss loss_cycle window_size features cross_mode init_name init_mode predictor <<< "$config"
 
