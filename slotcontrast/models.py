@@ -138,7 +138,7 @@ def build(
     use_cycle_consistency = (
         model_config.losses is not None 
         and "loss_cycle" in model_config.losses
-        and model_config.get("loss_weights", {}).get("loss_cycle", 0.0) != 0.0
+        # and model_config.get("loss_weights", {}).get("loss_cycle", 0.0) != 0.0
     )
     # Window for temporal cross-consistency (0 = same-frame only)
     temporal_cross_window = model_config.get("temporal_cross_window", 0)
