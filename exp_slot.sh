@@ -86,8 +86,8 @@ CONFIGS=(
     # "baseline_wo_contrast false false false false true 0.0 0.0 0 vit_block12 both GreedyFeatureInit first_frame"
     # "baseline_wo_contrast false false false false true 0.0 0.0 0 vit_block12 both GreedyFeatureInit per_frame"
 
-    "baseline_w_contrast false false false false true 0.5 0.0 0 vit_block12 both GreedyFeatureInit per_frame CrossAttentionPredictor"
-    "baseline_wo_contrast false false false false true 0.0 0.0 0 vit_block12 both GreedyFeatureInit per_frame CrossAttentionPredictor"
+    "baseline_w_contrast false false false false true 0.5 0.0 0 vit_block12 both GreedyFeatureInit per_frame networks.CrossAttentionPredictor"
+    "baseline_wo_contrast false false false false true 0.0 0.0 0 vit_block12 both GreedyFeatureInit per_frame networks.CrossAttentionPredictor"
     
 
 )

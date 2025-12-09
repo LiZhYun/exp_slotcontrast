@@ -129,7 +129,7 @@ model:
 
   predictor:
     # Standard predictor (no memory)
-    name: networks.TransformerEncoder # TransformerEncoder or CrossAttentionPredictor
+    name: networks.TransformerEncoder # networks.TransformerEncoder or networks.CrossAttentionPredictor
     dim: ${globals.SLOT_DIM}
     n_blocks: 1
     n_heads: 4
