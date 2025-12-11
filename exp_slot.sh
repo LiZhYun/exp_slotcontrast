@@ -95,21 +95,28 @@ CONFIGS=(
     # "window_loss_cycle_wo_contrast false false false false true 0.0 0.5 2 vit_block12 backward FixedLearnedInit first_frame networks.TransformerEncoder"
     # "window_loss_cycle_wo_contrast false false false false true 0.0 0.5 2 vit_block12 forward FixedLearnedInit first_frame networks.TransformerEncoder"
 
-    "baseline_wo_contrast false false false false true 0.0 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
+    # "baseline_wo_contrast false false false false true 0.0 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
     
-    "baseline_wo_contrast false false false false true 0.0 0.0 0 vit_block12 both GreedyFeatureInit first_frame networks.TransformerEncoder"
+    # "baseline_wo_contrast false false false false true 0.0 0.0 0 vit_block12 both GreedyFeatureInit first_frame networks.TransformerEncoder"
 
-    "gated_attention_grouper_wo_contrast false true false false false 0.0 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
-    "gated_attention_predictor_w_contrast false false true false true 0.5 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
-    "gated_attention_predictor_wo_contrast false false true false true 0.0 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
-    "gated_attention_grouper_predictor_wo_contrast false true true false false 0.0 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
+    # "gated_attention_grouper_wo_contrast false true false false false 0.0 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
+    # "gated_attention_predictor_w_contrast false false true false true 0.5 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
+    # "gated_attention_predictor_wo_contrast false false true false true 0.0 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
+    # "gated_attention_grouper_predictor_wo_contrast false true true false false 0.0 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
 
-    "ttt3r_grouper_w_contrast false false false true false 0.5 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
-    "ttt3r_grouper_wo_contrast false false false true false 0.0 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
-    "ttt3r_predictor_w_contrast true false false false true 0.5 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
-    "ttt3r_predictor_wo_contrast true false false false true 0.0 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
-    "ttt3r_grouper_predictor_wo_contrast true false false true false 0.0 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
+    # "ttt3r_grouper_w_contrast false false false true false 0.5 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
+    # "ttt3r_grouper_wo_contrast false false false true false 0.0 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
+    # "ttt3r_predictor_w_contrast true false false false true 0.5 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
+    # "ttt3r_predictor_wo_contrast true false false false true 0.0 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
+    # "ttt3r_grouper_predictor_wo_contrast true false false true false 0.0 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
 
+    # "gated_attention_grouper_gru_w_contrast false true false false true 0.5 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
+    # "gated_attention_grouper_gru_wo_contrast false true false false true 0.0 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
+
+    # "gated_attention_grouper_w_contrast false true false false false 0.5 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
+
+    "baseline_w_contrast false false false false true 0.5 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
+    "baseline_wo_contrast false false false false true 0.0 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
     )
 
     
