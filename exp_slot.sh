@@ -95,9 +95,9 @@ CONFIGS=(
     # "window_loss_cycle_wo_contrast false false false false true 0.0 0.5 2 vit_block12 backward FixedLearnedInit first_frame networks.TransformerEncoder"
     # "window_loss_cycle_wo_contrast false false false false true 0.0 0.5 2 vit_block12 forward FixedLearnedInit first_frame networks.TransformerEncoder"
 
-    # "baseline_wo_contrast false false false false true 0.0 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
+    "baseline_wo_contrast false false false false true 0.0 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
     
-    # "baseline_wo_contrast false false false false true 0.0 0.0 0 vit_block12 both GreedyFeatureInit first_frame networks.TransformerEncoder"
+    "baseline_wo_contrast false false false false true 0.0 0.0 0 vit_block12 both GreedyFeatureInit first_frame networks.TransformerEncoder"
 
     "gated_attention_grouper_wo_contrast false true false false false 0.0 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
     "gated_attention_predictor_w_contrast false false true false true 0.5 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
