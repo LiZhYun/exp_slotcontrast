@@ -593,3 +593,140 @@ class FeatureTimeSimilarity(FeatureSimilarity):
         similarity = einops.rearrange(similarity, "(b t) p k -> b t p k", b=len(features))
 
         return similarity
+
+
+class FourierPositionEmbed3D(nn.Module):
+    """3D Fourier positional embedding using depth and camera parameters.
+    
+    Unprojects 2D patch positions to 3D world coordinates and applies Fourier encoding.
+    """
+
+    def __init__(self, dim: int, patch_size: int = 14, num_bands: int = 64):
+        super().__init__()
+        self.dim = dim
+        self.patch_size = patch_size
+        self.num_bands = num_bands
+        # Fourier encoding: 3 coords * (1 original + 2 * num_bands) -> dim
+        fourier_dim = 3 * (1 + 2 * num_bands)
+        self.proj = nn.Linear(fourier_dim, dim)
+        # Fourier frequency bands
+        self.register_buffer(
+            "freq_bands", 
+            2.0 ** torch.linspace(0, num_bands - 1, num_bands)
+        )
+
+    def forward(
+        self, 
+        features: torch.Tensor, 
+        depth: torch.Tensor, 
+        intrinsics: torch.Tensor, 
+        extrinsics: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Args:
+            features: [B, N_patches, D] or [B, H_p, W_p, D]
+            depth: [B, H, W] depth map at image resolution
+            intrinsics: [B, 3, 3] camera intrinsic matrix
+            extrinsics: [B, 4, 4] camera extrinsic matrix (camera-to-world)
+        Returns:
+            features with 3D positional embedding added: [B, N_patches, D]
+        """
+        B = features.shape[0]
+        is_flat = features.ndim == 3
+        
+        if is_flat:
+            N = features.shape[1]
+            H_p = W_p = int(math.sqrt(N))
+        else:
+            H_p, W_p = features.shape[1], features.shape[2]
+        
+        # Get depth at patch centers
+        depth_patches = self._sample_depth_at_patches(depth, H_p, W_p)  # [B, H_p, W_p]
+        
+        # Create patch center coordinates in pixel space
+        patch_coords = self._get_patch_centers(H_p, W_p, depth.shape[-2:], depth.device)  # [H_p, W_p, 2]
+        
+        # Unproject to 3D world coordinates
+        world_coords = self._unproject(
+            patch_coords, depth_patches, intrinsics, extrinsics
+        )  # [B, H_p, W_p, 3]
+        
+        # Apply Fourier encoding
+        pos_embed = self._fourier_encode(world_coords)  # [B, H_p, W_p, fourier_dim]
+        pos_embed = self.proj(pos_embed)  # [B, H_p, W_p, dim]
+        
+        if is_flat:
+            pos_embed = pos_embed.reshape(B, -1, self.dim)
+        
+        return features + pos_embed
+
+    def _sample_depth_at_patches(
+        self, depth: torch.Tensor, H_p: int, W_p: int
+    ) -> torch.Tensor:
+        """Sample depth values at patch centers using adaptive average pooling."""
+        # depth: [B, H, W] -> [B, 1, H, W]
+        depth = depth.unsqueeze(1)
+        # Pool to patch grid size
+        depth_patches = nn.functional.adaptive_avg_pool2d(depth, (H_p, W_p))
+        return depth_patches.squeeze(1)  # [B, H_p, W_p]
+
+    def _get_patch_centers(
+        self, H_p: int, W_p: int, img_size: Tuple[int, int], device: torch.device
+    ) -> torch.Tensor:
+        """Get pixel coordinates of patch centers."""
+        H, W = img_size
+        # Patch centers in pixel coordinates
+        y = torch.linspace(self.patch_size / 2, H - self.patch_size / 2, H_p, device=device)
+        x = torch.linspace(self.patch_size / 2, W - self.patch_size / 2, W_p, device=device)
+        grid_y, grid_x = torch.meshgrid(y, x, indexing='ij')
+        return torch.stack([grid_x, grid_y], dim=-1)  # [H_p, W_p, 2] (u, v)
+
+    def _unproject(
+        self,
+        pixel_coords: torch.Tensor,  # [H_p, W_p, 2]
+        depth: torch.Tensor,         # [B, H_p, W_p]
+        intrinsics: torch.Tensor,    # [B, 3, 3]
+        extrinsics: torch.Tensor,    # [B, 4, 4]
+    ) -> torch.Tensor:
+        """Unproject 2D pixel coordinates to 3D world coordinates."""
+        B, H_p, W_p = depth.shape
+        
+        # Homogeneous pixel coordinates: [H_p, W_p, 3]
+        ones = torch.ones(H_p, W_p, 1, device=depth.device)
+        uv_hom = torch.cat([pixel_coords, ones], dim=-1)  # [H_p, W_p, 3]
+        
+        # Camera coordinates: K^-1 @ uv * depth
+        K_inv = torch.linalg.inv(intrinsics)  # [B, 3, 3]
+        cam_coords = torch.einsum('bij,hwj->bhwi', K_inv, uv_hom)  # [B, H_p, W_p, 3]
+        cam_coords = cam_coords * depth.unsqueeze(-1)  # [B, H_p, W_p, 3]
+        
+        # Homogeneous camera coordinates
+        cam_coords_hom = torch.cat([
+            cam_coords, 
+            torch.ones(B, H_p, W_p, 1, device=depth.device)
+        ], dim=-1)  # [B, H_p, W_p, 4]
+        
+        # Transform to world coordinates: inv(extrinsics) @ cam_coords
+        ext_inv = torch.linalg.inv(extrinsics)  # [B, 4, 4]
+        world_coords = torch.einsum('bij,bhwj->bhwi', ext_inv, cam_coords_hom)
+        
+        return world_coords[..., :3]  # [B, H_p, W_p, 3]
+
+    def _fourier_encode(self, coords: torch.Tensor) -> torch.Tensor:
+        """Apply Fourier positional encoding to 3D coordinates."""
+        # coords: [B, H_p, W_p, 3]
+        # freq_bands: [num_bands]
+        coords_scaled = coords.unsqueeze(-1) * self.freq_bands  # [B, H_p, W_p, 3, num_bands]
+        
+        # Sin and cos encoding
+        sin_enc = torch.sin(coords_scaled)
+        cos_enc = torch.cos(coords_scaled)
+        
+        # Concatenate: original + sin + cos for each coordinate
+        fourier_enc = torch.cat([
+            coords,  # [B, H_p, W_p, 3]
+            sin_enc.flatten(-2),  # [B, H_p, W_p, 3*num_bands]
+            cos_enc.flatten(-2),  # [B, H_p, W_p, 3*num_bands]
+        ], dim=-1)  # [B, H_p, W_p, 3 + 6*num_bands]
+        
+        return fourier_enc

@@ -1302,3 +1302,106 @@ class TransformerDecoder(nn.Module):
             return output, attn
         else:
             return output
+
+
+class HungarianPredictor(nn.Module):
+    """Aligns slots temporally using Hungarian matching on slot similarity.
+    
+    No learnable parameters - purely matching-based predictor.
+    Solves the slot permutation problem by finding optimal 1-to-1 matching
+    between consecutive frames based on cosine similarity.
+    """
+
+    def __init__(self, dim: int, similarity: str = "cosine", **kwargs):
+        """
+        Args:
+            dim: Slot dimension (for interface compatibility, not used internally)
+            similarity: Similarity metric - 'cosine' or 'l2'
+        """
+        super().__init__()
+        self.dim = dim
+        self.similarity = similarity
+        # Store previous frame slots for matching
+        self._prev_slots: Optional[torch.Tensor] = None
+
+    def reset(self):
+        """Reset state for new video sequence."""
+        self._prev_slots = None
+
+    def forward(
+        self,
+        slots: torch.Tensor,
+        prev_slots: Optional[torch.Tensor] = None,
+        return_weights: bool = False,
+    ) -> torch.Tensor:
+        """
+        Args:
+            slots: Current frame slots [B, N, D]
+            prev_slots: Previous frame slots [B, N, D] (optional, uses internal state if None)
+            return_weights: Whether to return matching weights (for interface compatibility)
+        
+        Returns:
+            Reordered slots to match previous frame's slot ordering [B, N, D]
+        """
+        # Use provided prev_slots or fall back to internal state
+        reference_slots = prev_slots if prev_slots is not None else self._prev_slots
+        
+        if reference_slots is None:
+            # First frame: no reordering needed, just store and return
+            self._prev_slots = slots.detach()
+            if return_weights:
+                return slots, None
+            return slots
+        
+        # Compute optimal matching and reorder
+        reordered_slots = self._hungarian_match(reference_slots, slots)
+        
+        # Update internal state with reordered slots
+        self._prev_slots = reordered_slots.detach()
+        
+        if return_weights:
+            return reordered_slots, None
+        return reordered_slots
+
+    def _hungarian_match(
+        self, prev_slots: torch.Tensor, curr_slots: torch.Tensor
+    ) -> torch.Tensor:
+        """Apply Hungarian matching to align curr_slots with prev_slots ordering.
+        
+        Args:
+            prev_slots: Reference slots from previous frame [B, N, D]
+            curr_slots: Current slots to reorder [B, N, D]
+        
+        Returns:
+            Reordered curr_slots [B, N, D]
+        """
+        from scipy.optimize import linear_sum_assignment
+        
+        B, N, D = curr_slots.shape
+        device = curr_slots.device
+        
+        # Compute cost matrix based on similarity
+        if self.similarity == "cosine":
+            # Normalize for cosine similarity
+            prev_norm = F.normalize(prev_slots, dim=-1)  # [B, N, D]
+            curr_norm = F.normalize(curr_slots, dim=-1)  # [B, N, D]
+            # Similarity matrix: [B, N_prev, N_curr]
+            sim_matrix = torch.bmm(prev_norm, curr_norm.transpose(1, 2))
+            # Cost = 1 - similarity (minimize cost = maximize similarity)
+            cost_matrix = 1 - sim_matrix
+        else:  # L2 distance
+            # [B, N, 1, D] - [B, 1, N, D] -> [B, N, N]
+            diff = prev_slots.unsqueeze(2) - curr_slots.unsqueeze(1)
+            cost_matrix = diff.norm(dim=-1)
+        
+        # Apply Hungarian algorithm per batch element
+        reordered_list = []
+        for b in range(B):
+            cost_np = cost_matrix[b].detach().cpu().numpy()
+            row_ind, col_ind = linear_sum_assignment(cost_np)
+            # col_ind tells us which curr_slot should go to which position
+            # We need inverse mapping: for each prev position, which curr slot
+            reordered = curr_slots[b, col_ind]  # [N, D]
+            reordered_list.append(reordered)
+        
+        return torch.stack(reordered_list, dim=0)  # [B, N, D]

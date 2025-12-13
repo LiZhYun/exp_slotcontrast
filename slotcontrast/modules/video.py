@@ -100,6 +100,8 @@ class LatentProcessor(nn.Module):
             )
             # Check if predictor supports init_state (CrossAttentionPredictor)
             use_init_state = hasattr(self.predictor, 'cross_attn') and init_state is not None
+            # Check if predictor is HungarianPredictor (matching-based)
+            is_hungarian = hasattr(self.predictor, '_hungarian_match')
             
             if use_memory:
                 result = self.predictor(
@@ -109,6 +111,9 @@ class LatentProcessor(nn.Module):
                 result = self.predictor(
                     updated_state, init_state=init_state, return_weights=self.use_ttt3r
                 )
+            elif is_hungarian:
+                # HungarianPredictor uses internal state, just pass slots
+                result = self.predictor(updated_state, return_weights=self.use_ttt3r)
             else:
                 result = self.predictor(updated_state, return_weights=self.use_ttt3r)
             
@@ -174,11 +179,14 @@ class MapOverTime(nn.Module):
         super().__init__()
         self.module = module
 
-    def forward(self, *args):
+    def forward(self, *args, **kwargs):
         batch_size = None
         seq_len = None
         flattened_args = []
         for idx, arg in enumerate(args):
+            if arg is None:
+                flattened_args.append(None)
+                continue
             B, T = arg.shape[:2]
             if not batch_size:
                 batch_size = B
@@ -196,7 +204,22 @@ class MapOverTime(nn.Module):
 
             flattened_args.append(arg.flatten(0, 1))
 
-        outputs = self.module(*flattened_args)
+        # Handle camera_data dict in kwargs (flatten each tensor inside)
+        flattened_kwargs = {}
+        for key, val in kwargs.items():
+            if val is None:
+                flattened_kwargs[key] = None
+            elif isinstance(val, dict):
+                flattened_kwargs[key] = {
+                    k: v.flatten(0, 1) if isinstance(v, torch.Tensor) else v
+                    for k, v in val.items()
+                }
+            elif isinstance(val, torch.Tensor):
+                flattened_kwargs[key] = val.flatten(0, 1)
+            else:
+                flattened_kwargs[key] = val
+
+        outputs = self.module(*flattened_args, **flattened_kwargs)
 
         if isinstance(outputs, Mapping):
             unflattened_outputs = {
@@ -228,6 +251,10 @@ class ScanOverTime(nn.Module):
         # Clear memory bank at start of sequence
         if hasattr(self.module, "memory_bank") and self.module.memory_bank is not None:
             self.module.memory_bank.clear()
+        
+        # Reset HungarianPredictor state at start of sequence
+        if hasattr(self.module, "predictor") and hasattr(self.module.predictor, "reset"):
+            self.module.predictor.reset()
 
         state = initial_state[:, 0] if per_frame_init else initial_state
         outputs = []

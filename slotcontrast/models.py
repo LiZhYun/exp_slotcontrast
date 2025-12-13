@@ -273,7 +273,9 @@ class ObjectCentricModel(pl.LightningModule):
         assert encoder_input.ndim == self.expected_input_dims
         batch_size = len(encoder_input)
 
-        encoder_output = self.encoder(encoder_input)
+        # Pass camera_data to encoder if available (for 3D positional embedding)
+        camera_data = inputs.get("camera_data")
+        encoder_output = self.encoder(encoder_input, camera_data)
         features = encoder_output["features"]
 
         slots_initial = self.initializer(batch_size=batch_size, features=features)

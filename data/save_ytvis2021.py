@@ -1,6 +1,7 @@
 """Script to download and shard YouTube VIS dataset."""
 import argparse
 import os
+import sys
 
 import einops
 import numpy as np
@@ -9,11 +10,18 @@ import tqdm
 import webdataset as wds
 from einops import rearrange
 from PIL import Image
-from utils import get_default_dir
-from ytvis import YTVOS as YTVIS
+from pathlib import Path
+from data.utils import get_default_dir
+from data.ytvis import YTVOS as YTVIS
 
-from videosaur.data.transforms import Resize
-from videosaur.data.transforms_video import FromTensorVideo, ToTensorVideo
+from slotcontrast.data.transforms import Resize
+from slotcontrast.data.transforms_video import FromTensorVideo, ToTensorVideo
+
+# Add TAPIP3D to path for depth/pose estimation
+TAPIP3D_PATH = Path(__file__).parent.parent.parent / "TAPIP3D"
+sys.path.insert(0, str(TAPIP3D_PATH))
+from annotation.megasam import MegaSAMAnnotator
+import cv2
 
 # TODO: add download from google drive
 # for now use gdrive_download script with IDs above.
@@ -51,9 +59,20 @@ parser.add_argument(
     default=get_default_dir("ytvis2021_resized2"),
     help="Directory where shards are written",
 )
+parser.add_argument(
+    "--add-depth", action="store_true", help="Whether to compute and add depth maps and camera poses"
+)
+parser.add_argument(
+    "--depth-model", type=str, default="moge", choices=["dav1", "dav2", "videoda", "moge"],
+    help="Depth model to use for MegaSAM"
+)
+parser.add_argument(
+    "--device", type=str, default="cuda", help="Device for depth estimation"
+)
 
 
-def write_dataset(video_dir, out_dir, split, add_annotations=True, annotations_file=None):
+def write_dataset(video_dir, out_dir, split, add_annotations=True, annotations_file=None, 
+                  megasam_annotator=None):
     if add_annotations and annotations_file is None:
         raise ValueError("Requested to add annotations but annotations file not given")
 
@@ -99,11 +118,33 @@ def write_dataset(video_dir, out_dir, split, add_annotations=True, annotations_f
                 video = to_video(torch.from_numpy(video))
                 video = from_video(resize(video)).cpu().numpy()
 
+            # Compute depth maps and camera poses if requested
+            depths, intrinsics, extrinsics = None, None, None
+            if megasam_annotator is not None:
+                # Get video resolution for depth processing
+                target_h, target_w = video.shape[1:3]
+                
+                # Process video to get depth, intrinsics, extrinsics
+                # return_raw_depths=True returns depths at MegaSAM's internal resolution
+                raw_depths, intrinsics, extrinsics = megasam_annotator.process_video(
+                    video, gt_intrinsics=None, return_raw_depths=True
+                )
+                
+                # Resize raw depths to match video resolution (following TAPIP3D inference.py)
+                depths = np.stack([
+                    cv2.resize(d.astype(np.float32), (target_w, target_h), interpolation=cv2.INTER_LINEAR)
+                    for d in raw_depths
+                ])
+
             if not add_annotations:
                 sample = {
                     "__key__": str(vid_id),
                     "video.npy": video,
                 }
+                if depths is not None:
+                    sample["depths.npy"] = depths
+                    sample["intrinsics.npy"] = intrinsics
+                    sample["extrinsics.npy"] = extrinsics
             else:
 
                 segmentations = []
@@ -150,6 +191,10 @@ def write_dataset(video_dir, out_dir, split, add_annotations=True, annotations_f
                     "video.npy": video,
                     "segmentations.npy": segmentations,
                 }
+                if depths is not None:
+                    sample["depths.npy"] = depths
+                    sample["intrinsics.npy"] = intrinsics
+                    sample["extrinsics.npy"] = extrinsics
             sink.write(sample)
 
     if add_annotations:
@@ -161,10 +206,25 @@ if __name__ == "__main__":
     root = os.path.join(args.download_dir, "train")
     annotations_file = os.path.join(root, "instances.json")
     video_dir = os.path.join(root, "JPEGImages")
+    
+    # Initialize MegaSAM annotator if depth estimation is requested
+    megasam_annotator = None
+    if args.add_depth:
+        # Resolution should be height * width (not squared resize_size)
+        # Use a reasonable default resolution for MegaSAM internal processing
+        resolution = args.resize_size * args.resize_size if args.resize else 320 * 480
+        megasam_annotator = MegaSAMAnnotator(
+            script_path=TAPIP3D_PATH / "third_party" / "megasam" / "inference.py",
+            depth_model=args.depth_model,
+            resolution=resolution,
+        )
+        print(f"Initialized MegaSAMAnnotator with depth_model={args.depth_model}, resolution={resolution}")
+    
     write_dataset(
         video_dir=video_dir,
         out_dir=args.out_path,
         split=args.split,
         add_annotations=annotations_file is not None and not args.only_videos,
         annotations_file=annotations_file,
+        megasam_annotator=megasam_annotator,
     )

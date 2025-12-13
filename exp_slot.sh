@@ -119,6 +119,7 @@ CONFIGS=(
     "baseline_wo_contrast false false false false true 0.0 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
     )
 
+SEED=42
     
 for config in "${CONFIGS[@]}"; do
     read -r exp_name use_ttt3r use_gated use_gated_predictor use_ttt use_gru loss_ss loss_cycle window_size features cross_mode init_name init_mode predictor <<< "$config"
@@ -139,7 +140,8 @@ for config in "${CONFIGS[@]}"; do
         "model.temporal_cross_mode=${cross_mode}" \
         "model.initializer.name=${init_name}" \
         "model.initializer.init_mode=${init_mode}" \
-        "model.predictor.name=${predictor}"
+        "model.predictor.name=${predictor}" \
+        "seed=${SEED}"
 done
 
 echo "All jobs submitted!"

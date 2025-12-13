@@ -170,4 +170,5 @@ checkpoints/
 outputs/
 
 ytvis2021_resized/
+ytvis2021_raw/
 *.tar

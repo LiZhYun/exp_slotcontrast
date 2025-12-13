@@ -48,8 +48,11 @@ class FrameEncoder(nn.Module):
         self.spatial_flatten = spatial_flatten
         self.main_features_key = main_features_key
 
-    def forward(self, images: torch.Tensor) -> Dict[str, torch.Tensor]:
+    def forward(
+        self, images: torch.Tensor, camera_data: Optional[Dict[str, torch.Tensor]] = None
+    ) -> Dict[str, torch.Tensor]:
         # images: batch x n_channels x height x width
+        # camera_data: optional dict with 'depth', 'intrinsics', 'extrinsics'
         backbone_features = self.backbone(images)
         if isinstance(backbone_features, dict):
             features = backbone_features[self.main_features_key].clone()
@@ -57,7 +60,10 @@ class FrameEncoder(nn.Module):
             features = backbone_features.clone()
 
         if self.pos_embed:
-            features = self.pos_embed(features)
+            if camera_data is not None:
+                features = self.pos_embed(features, **camera_data)
+            else:
+                features = self.pos_embed(features)
 
         if self.spatial_flatten:
             features = einops.rearrange(features, "b c h w -> b (h w) c")

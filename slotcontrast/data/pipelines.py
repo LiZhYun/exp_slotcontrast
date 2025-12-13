@@ -10,6 +10,17 @@ from slotcontrast.data.utils import remap_dict
 from slotcontrast.utils import config_as_kwargs
 
 
+def pack_camera_data(sample: Dict[str, Any]) -> Dict[str, Any]:
+    """Pack depth, intrinsics, extrinsics into camera_data dict if present."""
+    if "depths" in sample and "intrinsics" in sample and "extrinsics" in sample:
+        sample["camera_data"] = {
+            "depth": sample.pop("depths"),
+            "intrinsics": sample.pop("intrinsics"),
+            "extrinsics": sample.pop("extrinsics"),
+        }
+    return sample
+
+
 def build(config, name: Optional[str] = "VideoPipeline", **kwargs):
     name = config.get("name") or name
     if name in ("video", "VideoPipeline"):
@@ -174,6 +185,8 @@ class VideoPipeline(DataPipeline):
 
         if self.transforms is not None:
             dataset = dataset.map_dict(**self.transforms)
+            # Pack camera data after transforms if present
+            dataset = dataset.map(pack_camera_data)
 
         return dataset
 

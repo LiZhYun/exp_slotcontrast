@@ -150,6 +150,12 @@ def build(config):
             transforms["segmentations"] = tvt.Compose(
                 [YTVISToBinary(num_classes=config.num_classes), resize_segmentation]
             )
+        
+        # Add camera data transforms if use_3d_pos_embed is enabled
+        if config.get("use_3d_pos_embed", False):
+            transforms["depths"] = DepthTransform(input_size=size[0])
+            transforms["intrinsics"] = IntrinsicsTransform(input_size=size[0])
+            transforms["extrinsics"] = ExtrinsicsTransform()
 
     elif dataset == "dummy" or dataset == "dummyimage":
         if transform_type == "image":
@@ -575,3 +581,67 @@ class DenormalizeImage(tvt.Normalize):
         new_mean = [-m / s for m, s in zip(mean, std)]
         new_std = [1 / s for s in std]
         super().__init__(new_mean, new_std)
+
+
+class DepthTransform:
+    """Transform depth maps to match resized image resolution."""
+
+    def __init__(self, input_size: int):
+        self.input_size = input_size
+
+    def __call__(self, depths: np.ndarray) -> torch.Tensor:
+        """
+        Args:
+            depths: [F, H, W] numpy array
+        Returns:
+            Resized depth tensor [F, H_new, W_new]
+        """
+        depths = torch.from_numpy(depths).float()  # [F, H, W]
+        F, H, W = depths.shape
+        
+        # Compute resize scale (matching short_side_scale resize logic)
+        scale = self.input_size / min(H, W)
+        new_H, new_W = int(H * scale), int(W * scale)
+
+        # Resize depth maps
+        depths = depths.unsqueeze(1)  # [F, 1, H, W]
+        depths = torch.nn.functional.interpolate(
+            depths, size=(new_H, new_W), mode="bilinear", align_corners=False
+        )
+        return depths.squeeze(1)  # [F, new_H, new_W]
+
+
+class IntrinsicsTransform:
+    """Scale camera intrinsics to match resized image resolution."""
+
+    def __init__(self, input_size: int):
+        self.input_size = input_size
+
+    def __call__(self, intrinsics: np.ndarray) -> torch.Tensor:
+        """
+        Args:
+            intrinsics: [F, 3, 3] numpy array  
+        Returns:
+            Scaled intrinsics tensor [F, 3, 3]
+        """
+        return torch.from_numpy(intrinsics).float()
+
+
+class ExtrinsicsTransform:
+    """Convert extrinsics to tensor (no modification needed)."""
+
+    def __call__(self, extrinsics: np.ndarray) -> torch.Tensor:
+        return torch.from_numpy(extrinsics).float()
+
+
+class PackCameraData:
+    """Pack depth, intrinsics, extrinsics into camera_data dict after transforms."""
+    
+    def __call__(self, sample: dict) -> dict:
+        if "depths" in sample and "intrinsics" in sample and "extrinsics" in sample:
+            sample["camera_data"] = {
+                "depth": sample.pop("depths"),
+                "intrinsics": sample.pop("intrinsics"),
+                "extrinsics": sample.pop("extrinsics"),
+            }
+        return sample

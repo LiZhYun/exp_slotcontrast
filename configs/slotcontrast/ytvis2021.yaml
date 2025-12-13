@@ -76,6 +76,13 @@ model:
       pretrained: true
       model_kwargs:
         dynamic_img_size: true
+    # 3D Fourier positional embedding (optional - requires depth data)
+    # Uncomment to enable 3D positional embedding
+    # pos_embed:
+    #   name: utils.FourierPositionEmbed3D
+    #   dim: ${globals.FEAT_DIM}
+    #   patch_size: 14
+    #   num_bands: 64
     output_transform:
       name: networks.two_layer_mlp
       inp_dim: ${globals.FEAT_DIM}
@@ -129,11 +136,21 @@ model:
 
   predictor:
     # Standard predictor (no memory)
-    name: networks.TransformerEncoder # networks.TransformerEncoder or networks.CrossAttentionPredictor
+    name: networks.TransformerEncoder # networks.TransformerEncoder or networks.CrossAttentionPredictor or networks.HungarianPredictor
     dim: ${globals.SLOT_DIM}
     n_blocks: 1
     n_heads: 4
     use_gated: false
+    similarity: cosine  # 'cosine' or 'l2'
+    
+    # ============== HUNGARIAN PREDICTOR (Matching-based) ==============
+    # Uncomment to use Hungarian matching for temporal slot alignment
+    # No learnable parameters - purely matching-based
+    
+    # name: networks.HungarianPredictor
+    # dim: ${globals.SLOT_DIM}
+    # similarity: cosine  # 'cosine' or 'l2'
+    # =====================================================================
     
     # ============== MEMORY-CONDITIONED PREDICTOR (Optional) ==============
     # Uncomment to use memory-conditioned predictor with cross-attention
@@ -191,6 +208,8 @@ dataset:
   train_pipeline:
     chunk_size: 4
     keys: [video]
+    # For 3D pos embed, uncomment below and comment above:
+    # keys: [video, depths, intrinsics, extrinsics]
     sample_one_chunk_per_video: true
     transforms:
       name: ytvis_train
@@ -198,12 +217,16 @@ dataset:
       crop_type: short_side_resize_random
       input_size: 518
       num_classes: 10
+      # use_3d_pos_embed: true  # Enable camera data transforms
   val_pipeline:
     use_chunks: false
     keys: [video, segmentations]
+    # For 3D pos embed, uncomment below and comment above:
+    # keys: [video, segmentations, depths, intrinsics, extrinsics]
     transforms:
       name: ytvis_val
       type: video
       crop_type: central
       input_size: 518
       num_classes: 25
+      # use_3d_pos_embed: true  # Enable camera data transforms
