@@ -671,6 +671,7 @@ class TransformerEncoder(nn.Module):
         initial_residual_scale: Optional[float] = None,
         use_gated: bool = False,
         frozen: bool = False,
+        **kwargs,  # Absorb extra config arguments for compatibility
     ):
         super().__init__()
 
@@ -848,6 +849,7 @@ class CrossAttentionPredictor(nn.Module):
         initial_residual_scale: Optional[float] = None,
         use_gated: bool = False,
         frozen: bool = False,
+        **kwargs,  # Absorb extra config arguments for compatibility
     ):
         super().__init__()
         if hidden_dim is None:
@@ -1005,6 +1007,7 @@ class MemoryConditionedTransformer(nn.Module):
         activation: str = "relu",
         hidden_dim: Optional[int] = None,
         frozen: bool = False,
+        **kwargs,  # Absorb extra config arguments for compatibility
     ):
         super().__init__()
         self.use_memory = use_memory
