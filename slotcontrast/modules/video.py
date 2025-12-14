@@ -24,6 +24,7 @@ class LatentProcessor(nn.Module):
         first_step_corrector_args: Optional[Dict[str, Any]] = None,
         use_ttt3r: bool = False,
         use_cycle_consistency: bool = False,
+        skip_corrector: bool = False,
     ):
         super().__init__()
         self.corrector = corrector
@@ -33,6 +34,7 @@ class LatentProcessor(nn.Module):
         self.state_key = state_key
         self.use_ttt3r = use_ttt3r
         self.use_cycle_consistency = use_cycle_consistency
+        self.skip_corrector = skip_corrector
         if first_step_corrector_args is not None:
             self.first_step_corrector_args = first_step_corrector_args
         else:
@@ -48,7 +50,12 @@ class LatentProcessor(nn.Module):
         assert inputs.ndim == 3
 
         # 1. CORRECT: Update slots based on current frame features
-        if inputs is not None:
+        if self.skip_corrector:
+            # Bypass slot attention - use input state directly
+            corrector_output = None
+            updated_state = state
+            corrector_masks = None
+        elif inputs is not None:
             if time_step == 0 and self.first_step_corrector_args:
                 corrector_output = self.corrector(state, inputs, **self.first_step_corrector_args)
             else:
