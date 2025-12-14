@@ -52,7 +52,7 @@ class LatentProcessor(nn.Module):
         # 1. CORRECT: Update slots based on current frame features
         if self.skip_corrector:
             # Bypass slot attention - use input state directly
-            corrector_output = None
+            corrector_output = {"slots": state, "masks": None}
             updated_state = state
             corrector_masks = None
         elif inputs is not None:
