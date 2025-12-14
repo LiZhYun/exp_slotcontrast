@@ -400,7 +400,8 @@ class ObjectCentricModel(pl.LightningModule):
         inputs: Dict[str, Any],
         resizer: Optional[Callable[[torch.Tensor, torch.Tensor], torch.Tensor]],
     ) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]:
-        if masks is None:
+        # Handle None or list of Nones (from merge_dict_trees when skip_corrector=True)
+        if masks is None or (isinstance(masks, list) and all(m is None for m in masks)):
             return None, None, None
 
         if resizer is None:
