@@ -273,9 +273,15 @@ class ObjectCentricModel(pl.LightningModule):
         assert encoder_input.ndim == self.expected_input_dims
         batch_size = len(encoder_input)
 
-        # Pass camera_data to encoder if available (for 3D positional embedding)
-        camera_data = inputs.get("camera_data")
-        encoder_output = self.encoder(encoder_input, camera_data)
+        # Pack camera_data from individual keys if present (for 3D positional embedding)
+        camera_data = None
+        if "depths" in inputs and "intrinsics" in inputs and "extrinsics" in inputs:
+            camera_data = {
+                "depth": inputs["depths"],
+                "intrinsics": inputs["intrinsics"],
+                "extrinsics": inputs["extrinsics"],
+            }
+        encoder_output = self.encoder(encoder_input, camera_data=camera_data)
         features = encoder_output["features"]
 
         slots_initial = self.initializer(batch_size=batch_size, features=features)

@@ -14,7 +14,7 @@ from slotcontrast.utils import config_as_kwargs, make_build_fn
 def build(config, name: str):
     if name == "FrameEncoder":
         pos_embed = None
-        if config.get("pos_embed"):
+        if config.get("pos_embed") and config.get("use_pos_embed"):
             pos_embed = utils.build_module(config.pos_embed)
 
         output_transform = None
@@ -40,6 +40,7 @@ class FrameEncoder(nn.Module):
         output_transform: Optional[nn.Module] = None,
         spatial_flatten: bool = False,
         main_features_key: str = "vit_block12",
+        **kwargs,
     ):
         super().__init__()
         self.backbone = backbone

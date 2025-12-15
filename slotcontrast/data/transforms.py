@@ -153,8 +153,8 @@ def build(config):
         
         # Add camera data transforms if use_3d_pos_embed is enabled
         if config.get("use_3d_pos_embed", False):
-            transforms["depths"] = DepthTransform(input_size=size[0])
-            transforms["intrinsics"] = IntrinsicsTransform(input_size=size[0])
+            transforms["depths"] = DepthTransform(crop_type=crop_type, input_size=size)
+            transforms["intrinsics"] = IntrinsicsTransform(crop_type=crop_type, input_size=size)
             transforms["extrinsics"] = ExtrinsicsTransform()
 
     elif dataset == "dummy" or dataset == "dummyimage":
@@ -584,38 +584,83 @@ class DenormalizeImage(tvt.Normalize):
 
 
 class DepthTransform:
-    """Transform depth maps to match resized image resolution."""
+    """Transform depth maps to match resized image resolution.
+    
+    Applies the same crop/resize logic as video transforms.
+    """
 
-    def __init__(self, input_size: int):
-        self.input_size = input_size
+    def __init__(self, crop_type: str, input_size):
+        self.crop_type = crop_type
+        self.size = _to_2tuple(input_size)
 
     def __call__(self, depths: np.ndarray) -> torch.Tensor:
         """
         Args:
             depths: [F, H, W] numpy array
         Returns:
-            Resized depth tensor [F, H_new, W_new]
+            Resized/cropped depth tensor [F, H_new, W_new]
         """
         depths = torch.from_numpy(depths).float()  # [F, H, W]
-        F, H, W = depths.shape
+        depths = depths.unsqueeze(1)  # [F, 1, H, W] for interpolate
         
-        # Compute resize scale (matching short_side_scale resize logic)
-        scale = self.input_size / min(H, W)
-        new_H, new_W = int(H * scale), int(W * scale)
+        if self.crop_type in ("short_side_resize_random", "short_side_resize_central"):
+            # Short side resize + crop (random or central)
+            depths = self._short_side_resize(depths)
+            depths = self._center_crop(depths)  # Use center crop for depth (deterministic)
+        elif self.crop_type == "central":
+            # Center crop first, then resize
+            depths = self._center_crop_full(depths)
+            depths = torch.nn.functional.interpolate(
+                depths, size=self.size, mode="bilinear", align_corners=False
+            )
+        else:
+            # Default: just resize to target size
+            depths = torch.nn.functional.interpolate(
+                depths, size=self.size, mode="bilinear", align_corners=False
+            )
+        
+        return depths.squeeze(1)  # [F, new_H, new_W]
 
-        # Resize depth maps
-        depths = depths.unsqueeze(1)  # [F, 1, H, W]
-        depths = torch.nn.functional.interpolate(
+    def _short_side_resize(self, depths: torch.Tensor) -> torch.Tensor:
+        """Scale shorter side to target size, maintaining aspect ratio."""
+        _, _, H, W = depths.shape
+        target_size = self.size[0]  # Assuming square target
+        if W < H:
+            new_H = int(math.floor((float(H) / W) * target_size))
+            new_W = target_size
+        else:
+            new_H = target_size
+            new_W = int(math.floor((float(W) / H) * target_size))
+        return torch.nn.functional.interpolate(
             depths, size=(new_H, new_W), mode="bilinear", align_corners=False
         )
-        return depths.squeeze(1)  # [F, new_H, new_W]
+
+    def _center_crop(self, depths: torch.Tensor) -> torch.Tensor:
+        """Center crop to target size."""
+        _, _, H, W = depths.shape
+        target_H, target_W = self.size
+        start_H = (H - target_H) // 2
+        start_W = (W - target_W) // 2
+        return depths[:, :, start_H:start_H + target_H, start_W:start_W + target_W]
+
+    def _center_crop_full(self, depths: torch.Tensor) -> torch.Tensor:
+        """Center crop to square (min dimension)."""
+        _, _, H, W = depths.shape
+        min_size = min(H, W)
+        start_H = (H - min_size) // 2
+        start_W = (W - min_size) // 2
+        return depths[:, :, start_H:start_H + min_size, start_W:start_W + min_size]
 
 
 class IntrinsicsTransform:
-    """Scale camera intrinsics to match resized image resolution."""
+    """Scale camera intrinsics to match resized image resolution.
+    
+    Adjusts focal length and principal point based on crop/resize.
+    """
 
-    def __init__(self, input_size: int):
-        self.input_size = input_size
+    def __init__(self, crop_type: str, input_size):
+        self.crop_type = crop_type
+        self.size = _to_2tuple(input_size)
 
     def __call__(self, intrinsics: np.ndarray) -> torch.Tensor:
         """

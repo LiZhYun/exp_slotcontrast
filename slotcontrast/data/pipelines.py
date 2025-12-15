@@ -185,8 +185,6 @@ class VideoPipeline(DataPipeline):
 
         if self.transforms is not None:
             dataset = dataset.map_dict(**self.transforms)
-            # Pack camera data after transforms if present
-            dataset = dataset.map(pack_camera_data)
 
         return dataset
 

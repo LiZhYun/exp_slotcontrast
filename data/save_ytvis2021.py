@@ -69,10 +69,39 @@ parser.add_argument(
 parser.add_argument(
     "--device", type=str, default="cuda", help="Device for depth estimation"
 )
+parser.add_argument(
+    "--save-depth-vis", type=int, default=0, 
+    help="Number of depth visualization videos to save (0 to disable)"
+)
+
+
+import matplotlib.pyplot as plt
+
+
+def save_depth_video(video, depths, out_path, vid_id, fps=10):
+    """Save side-by-side RGB and depth visualization video."""
+    import matplotlib.cm as cm
+    h, w = video.shape[1:3]
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out_file = os.path.join(out_path, f"depth_vis_{vid_id}.mp4")
+    writer = cv2.VideoWriter(out_file, fourcc, fps, (w * 2, h))
+    
+    # Normalize depths for visualization
+    d_min, d_max = depths.min(), depths.max()
+    depths_norm = (depths - d_min) / (d_max - d_min + 1e-8)
+    
+    for frame, depth in zip(video, depths_norm):
+        # Apply colormap to depth
+        depth_colored = (cm.plasma(depth)[:, :, :3] * 255).astype(np.uint8)
+        # Concatenate RGB and depth side by side (convert RGB to BGR for cv2)
+        combined = np.concatenate([frame[:, :, ::-1], depth_colored[:, :, ::-1]], axis=1)
+        writer.write(combined)
+    writer.release()
+    print(f"Saved depth visualization: {out_file}")
 
 
 def write_dataset(video_dir, out_dir, split, add_annotations=True, annotations_file=None, 
-                  megasam_annotator=None):
+                  megasam_annotator=None, save_depth_vis=0):
     if add_annotations and annotations_file is None:
         raise ValueError("Requested to add annotations but annotations file not given")
 
@@ -97,6 +126,7 @@ def write_dataset(video_dir, out_dir, split, add_annotations=True, annotations_f
     train_ids = all_ids[:-300]
     ids = train_ids if split == "train" else val_ids
     print(f"Saving {len(ids)} from {len(all_ids)} as a {split} part of the datasets.")
+    depth_vis_count = 0
     with wds.ShardWriter(pattern, maxcount=args.maxcount) as sink:
         max_num_instances = 0
         for vid_id in tqdm.tqdm(ids):
@@ -135,6 +165,11 @@ def write_dataset(video_dir, out_dir, split, add_annotations=True, annotations_f
                     cv2.resize(d.astype(np.float32), (target_w, target_h), interpolation=cv2.INTER_LINEAR)
                     for d in raw_depths
                 ])
+                
+                # Save depth visualization for first N videos
+                if depth_vis_count < save_depth_vis:
+                    save_depth_video(video, depths, out_dir, vid_id)
+                    depth_vis_count += 1
 
             if not add_annotations:
                 sample = {
@@ -227,4 +262,5 @@ if __name__ == "__main__":
         add_annotations=annotations_file is not None and not args.only_videos,
         annotations_file=annotations_file,
         megasam_annotator=megasam_annotator,
+        save_depth_vis=args.save_depth_vis,
     )
