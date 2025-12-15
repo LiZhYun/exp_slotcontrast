@@ -66,6 +66,8 @@ model:
     dim: ${globals.SLOT_DIM}
     saliency_mode: norm  # or 'entropy', 'variance'
     init_mode: first_frame  # per_frame or first_frame
+    aggregate: false           # Enable patch aggregation
+    aggregate_threshold: 0.5  # Include patches with sim > 0.5
 
   encoder:
     backbone:
