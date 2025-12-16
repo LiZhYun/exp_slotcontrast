@@ -18,7 +18,7 @@ def greedy_slot_initialization(
     temperature: float = 0.1,
     saliency_mode: str = "norm",
     aggregate: bool = False,
-    aggregate_threshold: float = 0.5,
+    aggregate_threshold: float = 0.0,
 ) -> torch.Tensor:
     # Handle video input [B, T, N, D]
     if features.ndim == 4:
