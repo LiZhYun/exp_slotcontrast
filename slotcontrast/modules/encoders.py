@@ -65,6 +65,7 @@ class FrameEncoder(nn.Module):
                 features = self.pos_embed(features, **camera_data)
             else:
                 features = self.pos_embed(features)
+            backbone_features = features.clone()
 
         if self.spatial_flatten:
             features = einops.rearrange(features, "b c h w -> b (h w) c")
