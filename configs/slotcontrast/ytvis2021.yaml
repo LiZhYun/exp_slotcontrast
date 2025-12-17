@@ -201,9 +201,9 @@ dataset:
   num_val_workers: 1
   train_pipeline:
     chunk_size: 4
-    # keys: [video]
+    keys: [video]
     # For 3D pos embed, uncomment below and comment above:
-    keys: [video, depths, intrinsics, extrinsics]
+    # keys: [video, depths, intrinsics, extrinsics]
     sample_one_chunk_per_video: true
     transforms:
       name: ytvis_train
@@ -211,16 +211,16 @@ dataset:
       crop_type: short_side_resize_random
       input_size: 518
       num_classes: 10
-      use_3d_pos_embed: true  # Enable camera data transforms
+      use_3d_pos_embed: false  # Enable camera data transforms
   val_pipeline:
     use_chunks: false
-    # keys: [video, segmentations]
+    keys: [video, segmentations]
     # For 3D pos embed, uncomment below and comment above:
-    keys: [video, segmentations, depths, intrinsics, extrinsics]
+    # keys: [video, segmentations, depths, intrinsics, extrinsics]
     transforms:
       name: ytvis_val
       type: video
       crop_type: central
       input_size: 518
       num_classes: 25
-      use_3d_pos_embed: true  # Enable camera data transforms
+      use_3d_pos_embed: false  # Enable camera data transforms
