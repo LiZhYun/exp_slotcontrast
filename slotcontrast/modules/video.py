@@ -260,13 +260,21 @@ class ScanOverTime(nn.Module):
             self.module.memory_bank.clear()
         
         # Reset HungarianPredictor state at start of sequence
+        is_hungarian = (
+            hasattr(self.module, "predictor") 
+            and hasattr(self.module.predictor, "_hungarian_match")
+        )
         if hasattr(self.module, "predictor") and hasattr(self.module.predictor, "reset"):
             self.module.predictor.reset()
 
         state = initial_state[:, 0] if per_frame_init else initial_state
         outputs = []
         for t in range(seq_len):
-            # Pass per-frame init for cross-attention predictor
+            # For per-frame init with Hungarian: use fresh init each frame as input to corrector
+            # Hungarian reorders the output to maintain temporal consistency
+            if per_frame_init and is_hungarian and t > 0:
+                state = initial_state[:, t]
+            
             init_state_t = initial_state[:, t] if per_frame_init else None
             if self.pass_step:
                 output = self.module(state, inputs[:, t], t, init_state=init_state_t)
