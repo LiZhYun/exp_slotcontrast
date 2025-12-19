@@ -145,6 +145,7 @@ model:
     n_heads: 4
     use_gated: false
     similarity: cosine  # 'cosine' or 'l2'
+    pre_match: true  # Match greedy init BEFORE slot attention (recommended with per_frame init)
     
     # ============== MEMORY-CONDITIONED PREDICTOR (Optional) ==============
     # Uncomment to use memory-conditioned predictor with cross-attention

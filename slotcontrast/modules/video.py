@@ -267,13 +267,24 @@ class ScanOverTime(nn.Module):
         if hasattr(self.module, "predictor") and hasattr(self.module.predictor, "reset"):
             self.module.predictor.reset()
 
+        # Check if pre-matching mode is enabled
+        use_pre_match = (
+            is_hungarian
+            and hasattr(self.module.predictor, "pre_match")
+            and self.module.predictor.pre_match
+        )
+
         state = initial_state[:, 0] if per_frame_init else initial_state
         outputs = []
         for t in range(seq_len):
-            # For per-frame init with Hungarian: use fresh init each frame as input to corrector
-            # Hungarian reorders the output to maintain temporal consistency
+            # For per-frame init with Hungarian
             if per_frame_init and is_hungarian and t > 0:
-                state = initial_state[:, t]
+                if use_pre_match:
+                    # Pre-match: align greedy init to reference BEFORE slot attention
+                    state = self.module.predictor.match_to_reference(initial_state[:, t])
+                else:
+                    # Post-match (original): use fresh init, Hungarian matches after slot attention
+                    state = initial_state[:, t]
             
             init_state_t = initial_state[:, t] if per_frame_init else None
             if self.pass_step:

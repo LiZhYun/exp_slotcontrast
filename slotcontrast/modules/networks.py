@@ -1313,23 +1313,34 @@ class HungarianPredictor(nn.Module):
     No learnable parameters - purely matching-based predictor.
     Solves the slot permutation problem by finding optimal 1-to-1 matching
     between consecutive frames based on cosine similarity.
+    
+    Supports two modes:
+    - pre_match=False (default): Match AFTER slot attention (original behavior)
+    - pre_match=True: Match BEFORE slot attention (call match_to_reference explicitly)
     """
 
-    def __init__(self, dim: int, similarity: str = "cosine", **kwargs):
+    def __init__(self, dim: int, similarity: str = "cosine", pre_match: bool = False, **kwargs):
         """
         Args:
             dim: Slot dimension (for interface compatibility, not used internally)
             similarity: Similarity metric - 'cosine' or 'l2'
+            pre_match: If True, matching is done before slot attention via match_to_reference()
         """
         super().__init__()
         self.dim = dim
         self.similarity = similarity
-        # Store previous frame slots for matching
+        self.pre_match = pre_match
         self._prev_slots: Optional[torch.Tensor] = None
 
     def reset(self):
         """Reset state for new video sequence."""
         self._prev_slots = None
+
+    def match_to_reference(self, slots: torch.Tensor) -> torch.Tensor:
+        """Match input slots to stored reference (for pre-matching before slot attention)."""
+        if self._prev_slots is None:
+            return slots
+        return self._hungarian_match(self._prev_slots, slots)
 
     def forward(
         self,
@@ -1346,20 +1357,23 @@ class HungarianPredictor(nn.Module):
         Returns:
             Reordered slots to match previous frame's slot ordering [B, N, D]
         """
-        # Use provided prev_slots or fall back to internal state
-        reference_slots = prev_slots if prev_slots is not None else self._prev_slots
-        
-        if reference_slots is None:
-            # First frame: no reordering needed, just store and return
+        if self.pre_match:
+            # Pre-match mode: matching was done before slot attention, just update reference
             self._prev_slots = slots.detach()
             if return_weights:
                 return slots, None
             return slots
         
-        # Compute optimal matching and reorder
-        reordered_slots = self._hungarian_match(reference_slots, slots)
+        # Post-match mode (original behavior)
+        reference_slots = prev_slots if prev_slots is not None else self._prev_slots
         
-        # Update internal state with reordered slots
+        if reference_slots is None:
+            self._prev_slots = slots.detach()
+            if return_weights:
+                return slots, None
+            return slots
+        
+        reordered_slots = self._hungarian_match(reference_slots, slots)
         self._prev_slots = reordered_slots.detach()
         
         if return_weights:
