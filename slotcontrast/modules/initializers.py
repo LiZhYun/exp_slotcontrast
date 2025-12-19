@@ -44,6 +44,18 @@ def greedy_slot_initialization(
     elif saliency_mode == "variance":
         mean_feat = features.mean(dim=1, keepdim=True)
         saliency = (features - mean_feat).norm(dim=-1)
+    elif saliency_mode == "pca":
+        # PCA-based saliency: patches with high projection on top PCs are salient
+        mean_feat = features.mean(dim=1, keepdim=True)  # [B, 1, D]
+        centered = features - mean_feat  # [B, N, D]
+        # Covariance matrix [B, D, D]
+        cov = torch.bmm(centered.transpose(1, 2), centered) / (N - 1)
+        # Top-k eigenvectors (eigh returns ascending order)
+        k = min(n_slots, D // 4, 32)
+        _, eigenvectors = torch.linalg.eigh(cov)
+        top_vecs = eigenvectors[:, :, -k:]  # [B, D, k]
+        # Projection magnitude onto top PCs
+        saliency = torch.bmm(centered, top_vecs).norm(dim=-1)  # [B, N]
     else:
         saliency = features.norm(dim=-1)
     
