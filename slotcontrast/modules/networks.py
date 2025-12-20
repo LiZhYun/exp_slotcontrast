@@ -1314,9 +1314,10 @@ class HungarianPredictor(nn.Module):
     Solves the slot permutation problem by finding optimal 1-to-1 matching
     between consecutive frames based on cosine similarity.
     
-    Supports two modes:
-    - pre_match=False (default): Match AFTER slot attention (original behavior)
-    - pre_match=True: Match BEFORE slot attention (call match_to_reference explicitly)
+    Matching modes (pre_match):
+    - False (default): Match AFTER slot attention (original behavior)
+    - True: Match BEFORE slot attention, reference is slot attention output
+    - "greedy": Match greedy→greedy (same space), reference is matched greedy init
     """
 
     def __init__(self, dim: int, similarity: str = "cosine", pre_match: bool = False, **kwargs):
@@ -1324,23 +1325,35 @@ class HungarianPredictor(nn.Module):
         Args:
             dim: Slot dimension (for interface compatibility, not used internally)
             similarity: Similarity metric - 'cosine' or 'l2'
-            pre_match: If True, matching is done before slot attention via match_to_reference()
+            pre_match: False=post-match, True=pre-match (greedy→slot), "greedy"=greedy→greedy
         """
         super().__init__()
         self.dim = dim
         self.similarity = similarity
         self.pre_match = pre_match
         self._prev_slots: Optional[torch.Tensor] = None
+        self._prev_greedy: Optional[torch.Tensor] = None  # For greedy→greedy matching
 
     def reset(self):
         """Reset state for new video sequence."""
         self._prev_slots = None
+        self._prev_greedy = None
 
     def match_to_reference(self, slots: torch.Tensor) -> torch.Tensor:
         """Match input slots to stored reference (for pre-matching before slot attention)."""
-        if self._prev_slots is None:
-            return slots
-        return self._hungarian_match(self._prev_slots, slots)
+        if self.pre_match == "greedy":
+            # Greedy→greedy: match to previous greedy init, store matched as new reference
+            if self._prev_greedy is None:
+                self._prev_greedy = slots.detach()
+                return slots
+            matched = self._hungarian_match(self._prev_greedy, slots)
+            self._prev_greedy = matched.detach()
+            return matched
+        else:
+            # Original pre_match: match to previous slot attention output
+            if self._prev_slots is None:
+                return slots
+            return self._hungarian_match(self._prev_slots, slots)
 
     def forward(
         self,
@@ -1357,8 +1370,14 @@ class HungarianPredictor(nn.Module):
         Returns:
             Reordered slots to match previous frame's slot ordering [B, N, D]
         """
+        if self.pre_match == "greedy":
+            # Greedy mode: matching done in match_to_reference, just pass through
+            if return_weights:
+                return slots, None
+            return slots
+        
         if self.pre_match:
-            # Pre-match mode: matching was done before slot attention, just update reference
+            # Pre-match mode: matching was done before slot attention, update slot reference
             self._prev_slots = slots.detach()
             if return_weights:
                 return slots, None

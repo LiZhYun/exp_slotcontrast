@@ -267,11 +267,11 @@ class ScanOverTime(nn.Module):
         if hasattr(self.module, "predictor") and hasattr(self.module.predictor, "reset"):
             self.module.predictor.reset()
 
-        # Check if pre-matching mode is enabled
+        # Check if pre-matching mode is enabled (True or "greedy")
         use_pre_match = (
             is_hungarian
             and hasattr(self.module.predictor, "pre_match")
-            and self.module.predictor.pre_match
+            and self.module.predictor.pre_match  # True or "greedy" are both truthy
         )
 
         state = initial_state[:, 0] if per_frame_init else initial_state

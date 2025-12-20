@@ -64,7 +64,7 @@ model:
     name: FixedLearnedInit # FixedLearnedInit or GreedyFeatureInit
     n_slots: ${globals.NUM_SLOTS}
     dim: ${globals.SLOT_DIM}
-    saliency_mode: pca  # 'norm', 'entropy', 'variance', 'pca'
+    saliency_mode: norm  # 'norm', 'entropy', 'variance', 'pca'
     init_mode: first_frame  # per_frame or first_frame
     aggregate: false           # Enable patch aggregation
     aggregate_threshold: 0.5  # Include patches with sim > 0.5
@@ -145,7 +145,7 @@ model:
     n_heads: 4
     use_gated: false
     similarity: cosine  # 'cosine' or 'l2'
-    pre_match: true  # Match greedy init BEFORE slot attention (recommended with per_frame init)
+    pre_match: true  # Match greedy init BEFORE slot attention (recommended with per_frame init) or greedy
     
     # ============== MEMORY-CONDITIONED PREDICTOR (Optional) ==============
     # Uncomment to use memory-conditioned predictor with cross-attention
