@@ -108,11 +108,13 @@ class FixedLearnedInit(nn.Module):
     """Learned initialization with a fixed number of slots."""
 
     def __init__(
-        self, n_slots: int, dim: int, initial_std: Optional[float] = None, frozen: bool = False, **kwargs
+        self, n_slots: int, dim: int, initial_std: Optional[float] = None, frozen: bool = False,
+        init_mode: str = "first_frame", **kwargs
     ):
         super().__init__()
         self.n_slots = n_slots
         self.dim = dim
+        self.init_mode = init_mode
         if initial_std is None:
             initial_std = dim**-0.5
         self.slots = nn.Parameter(torch.randn(1, n_slots, dim) * initial_std)
@@ -120,7 +122,14 @@ class FixedLearnedInit(nn.Module):
             self.slots.requires_grad_(False)
 
     def forward(self, batch_size: int, features: Optional[torch.Tensor] = None):
-        return self.slots.expand(batch_size, -1, -1)
+        slots = self.slots.expand(batch_size, -1, -1)  # [B, n_slots, D]
+        
+        # For video input with per_frame mode, expand to [B, T, n_slots, D]
+        if features is not None and features.ndim == 4 and self.init_mode == "per_frame":
+            T = features.shape[1]
+            slots = slots.unsqueeze(1).expand(-1, T, -1, -1)
+        
+        return slots
 
 
 class GreedyFeatureInit(nn.Module):

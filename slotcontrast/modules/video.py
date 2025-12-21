@@ -25,6 +25,7 @@ class LatentProcessor(nn.Module):
         use_ttt3r: bool = False,
         use_cycle_consistency: bool = False,
         skip_corrector: bool = False,
+        skip_predictor: bool = False,
     ):
         super().__init__()
         self.corrector = corrector
@@ -35,6 +36,7 @@ class LatentProcessor(nn.Module):
         self.use_ttt3r = use_ttt3r
         self.use_cycle_consistency = use_cycle_consistency
         self.skip_corrector = skip_corrector
+        self.skip_predictor = skip_predictor
         if first_step_corrector_args is not None:
             self.first_step_corrector_args = first_step_corrector_args
         else:
@@ -99,7 +101,7 @@ class LatentProcessor(nn.Module):
 
         # 4. PREDICT: Generate initialization for NEXT frame
         attn_list = None
-        if self.predictor:
+        if self.predictor and not self.skip_predictor:
             use_memory = (
                 hasattr(self.predictor, "use_memory")
                 and getattr(self.predictor, "use_memory", False)
