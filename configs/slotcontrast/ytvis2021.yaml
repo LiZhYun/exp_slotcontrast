@@ -109,6 +109,7 @@ model:
     # TTT3R: Adaptive state update based on predictor attention (default: false)
     use_ttt3r: false
     skip_corrector: false  # Bypass slot attention, use greedy-initialized slots directly
+    skip_predictor: false  # Bypass predictor, use greedy-initialized slots directly
     
     # ============== MEMORY SYSTEM (Optional) ==============
     # Uncomment the following sections to enable SAM2-style temporal memory
