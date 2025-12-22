@@ -27,7 +27,11 @@ export PYTHONPATH="${PWD}:$PYTHONPATH"
 DATA_DIR="/scratch/work/liz23/slotcontrast/data"
 OUTPUT_DIR="/scratch/work/liz23/slotcontrast/logs"
 
-srun python slotcontrast/train.py "configs/slotcontrast/ytvis2021.yaml" \
+# First argument is the config file, rest are additional arguments
+CONFIG_FILE=$1
+shift
+
+srun python slotcontrast/train.py "${CONFIG_FILE}" \
         "$@" \
         --data-dir ${DATA_DIR} \
         --log-dir ${OUTPUT_DIR} \

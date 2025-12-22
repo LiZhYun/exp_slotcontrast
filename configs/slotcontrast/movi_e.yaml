@@ -94,7 +94,7 @@ model:
     slot_dim: ${globals.SLOT_DIM}
     n_iters: 2
     use_mlp: true
-    use_gru: false
+    use_gru: true
     use_ttt: false
     use_gated: false
     use_ent: false
