@@ -14,7 +14,7 @@ globals:
 
 trainer:
   max_steps: 300000
-  log_every_n_steps: 2500
+  log_every_n_steps: 250
   val_check_interval: 2500
   gradient_clip_val: 0.05
 
@@ -44,15 +44,24 @@ model:
       batch_contrast: true
       patch_inputs: false
       keep_input_dim: true
+    loss_cycle:
+      name: CycleConsistencyLoss
+      pred_key: processor.cycle_slots
+      target_key: processor.cycle_targets
 
   loss_weights:
     loss_featrec: 1.0
     loss_ss: 0.5
+    loss_cycle: 0.5
 
   initializer:
-    name: FixedLearnedInit
+    name: FixedLearnedInit # FixedLearnedInit or GreedyFeatureInit
     n_slots: ${globals.NUM_SLOTS}
     dim: ${globals.SLOT_DIM}
+    saliency_mode: norm  # 'norm', 'entropy', 'variance', 'pca'
+    init_mode: first_frame  # per_frame or first_frame
+    aggregate: false           # Enable patch aggregation
+    aggregate_threshold: 0.5  # Include patches with sim > 0.5
 
   encoder:
     backbone:
@@ -65,6 +74,13 @@ model:
       pretrained: true
       model_kwargs:
         dynamic_img_size: True
+    # 3D Fourier positional embedding (optional - requires depth data)
+    use_pos_embed: false
+    pos_embed:
+      name: utils.FourierPositionEmbed3D
+      dim: ${globals.FEAT_DIM}
+      patch_size: 14
+      num_bands: 64
     output_transform:
       name: networks.two_layer_mlp
       inp_dim: ${globals.FEAT_DIM}
@@ -78,10 +94,17 @@ model:
     slot_dim: ${globals.SLOT_DIM}
     n_iters: 2
     use_mlp: true
+    use_gru: false
+    use_ttt: false
+    use_gated: false
+    use_ent: false
 
   latent_processor:
     first_step_corrector_args:
       n_iters: 3
+    use_ttt3r: false
+    skip_corrector: false  # Bypass slot attention, use greedy-initialized slots directly
+    skip_predictor: false  # Bypass predictor, use greedy-initialized slots directly
 
   decoder:
     name: MLPDecoder
@@ -91,13 +114,21 @@ model:
     n_patches: ${globals.NUM_PATCHES}
 
   predictor:
-    name: networks.TransformerEncoder
+    name: networks.TransformerEncoder # networks.TransformerEncoder or networks.CrossAttentionPredictor or networks.HungarianPredictor
     dim: ${globals.SLOT_DIM}
     n_blocks: 1
     n_heads: 4
+    use_gated: false
+    similarity: cosine  # 'cosine' or 'l2'
+    pre_match: greedy  # Match greedy init BEFORE slot attention (recommended with per_frame init) or greedy
 
 val_metrics:
   ari:
+    name: VideoARI
+    ignore_background: true
+    pred_key: decoder_masks_hard
+    true_key: segmentations
+  fg_ari:
     name: VideoARI
     ignore_background: true
     pred_key: decoder_masks_hard

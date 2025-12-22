@@ -107,6 +107,8 @@ def _setup_loggers(args, config, log_path: pathlib.Path) -> Dict[str, pl.loggers
     if not args.no_wandb:
         loggers["wandb"] = pl.loggers.WandbLogger(
             project=config.get("experiment_group", "slotcontrast"),
+            # group is dataset name which is the args.config name without .yaml extension
+            group=args.config.split("/")[-1].split(".")[0],
             # name is exp name + date-time
             name=f"{config.get('experiment_name', None)}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}",
             save_dir=log_path,
