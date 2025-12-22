@@ -115,14 +115,67 @@ CONFIGS=(
 
     # "gated_attention_grouper_w_contrast false true false false false 0.5 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
 
-    "baseline_w_contrast false false false false true 0.5 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
-    "baseline_wo_contrast false false false false true 0.0 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
+    # "baseline_w_contrast false false false false true 0.5 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
+    # "baseline_wo_contrast false false false false true 0.0 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
+    
+    # "gated_attention_grouper_predictor_gru_w_contrast false true true false true 0.5 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
+    # "gated_attention_grouper_predictor_gru_wo_contrast false true true false true 0.0 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
+    
+    # "ttt3r_grouper_predictor_gru_w_contrast true false false true true 0.5 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
+    # "ttt3r_grouper_predictor_gru_wo_contrast true false false true true 0.0 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
+
+    # "baseline_wo_contrast false false false false true 0.0 0.0 0 vit_block11 both FixedLearnedInit first_frame networks.TransformerEncoder"
+
+    # "gated_attention_grouper_wo_contrast false true false false false 0.0 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
+
+    # "window_loss_cycle_wo_contrast false false false false true 0.0 0.5 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
+    # "window_loss_cycle_w_contrast false false false false true 0.5 1.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
+    # "window_loss_cycle_wo_contrast false false false false true 0.0 1.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
+    # "window_loss_cycle_w_contrast false false false false true 0.1 1.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
+    # "window_loss_cycle_w_contrast false false false false true 0.1 0.5 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
+    # "window_loss_cycle_wo_contrast false false false false true 0.0 0.5 2 vit_block11 forward FixedLearnedInit first_frame networks.TransformerEncoder"
+
+    # "baseline_w_contrast false false false false true 0.5 0.0 0 vit_block12 both GreedyFeatureInit per_frame networks.HungarianPredictor"
+    # "baseline_wo_contrast false false false false true 0.0 0.0 0 vit_block12 both GreedyFeatureInit per_frame networks.HungarianPredictor"
+
+    # "window_loss_cycle_wo_contrast false false false false true 0.0 0.5 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder"
+
+    # "baseline_w_contrast false false false false true 0.5 0.0 0 vit_block12 both GreedyFeatureInit per_frame networks.HungarianPredictor true"
+    # "baseline_wo_contrast false false false false true 0.0 0.0 0 vit_block12 both GreedyFeatureInit per_frame networks.HungarianPredictor true"
+    
+    # "3d_pos_emb_w_contrast false false false false true 0.5 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder false true"
+    # "3d_pos_emb_wo_contrast false false false false true 0.0 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder false true"
+
+    # "baseline_w_contrast false false false false true 0.5 0.0 0 vit_block12 both GreedyFeatureInit per_frame networks.HungarianPredictor true false true"
+    # "baseline_wo_contrast false false false false true 0.0 0.0 0 vit_block12 both GreedyFeatureInit per_frame networks.HungarianPredictor true false true"
+    
+    # "baseline_w_contrast false false false false true 0.5 0.0 0 vit_block12 both GreedyFeatureInit per_frame networks.HungarianPredictor false false false"
+    # "baseline_wo_contrast false false false false true 0.0 0.0 0 vit_block12 both GreedyFeatureInit per_frame networks.HungarianPredictor false false false"
+
+    # "hungarian_pre_w_contrast false false false false true 0.5 0.0 0 vit_block12 both GreedyFeatureInit per_frame networks.HungarianPredictor false false false"
+    # "hungarian_pre_wo_contrast false false false false true 0.0 0.0 0 vit_block12 both GreedyFeatureInit per_frame networks.HungarianPredictor false false false"
+
+    # "hungarian_pre_block11_w_contrast false false false false true 0.5 0.0 0 vit_block11 both GreedyFeatureInit per_frame networks.HungarianPredictor false false false"
+    # "hungarian_pre_block11_wo_contrast false false false false true 0.0 0.0 0 vit_block11 both GreedyFeatureInit per_frame networks.HungarianPredictor false false false"
+
+    # "hungarian_pre_block12_pca_w_contrast false false false false true 0.5 0.0 0 vit_block12 both GreedyFeatureInit per_frame networks.HungarianPredictor false false false"
+    # "hungarian_pre_block12_pca_wo_contrast false false false false true 0.0 0.0 0 vit_block12 both GreedyFeatureInit per_frame networks.HungarianPredictor false false false"
+
+    # "hungarian_greedy_block12_norm_w_contrast false false false false true 0.5 0.0 0 vit_block12 both GreedyFeatureInit per_frame networks.HungarianPredictor false false false"
+    # "hungarian_greedy_block12_norm_wo_contrast false false false false true 0.0 0.0 0 vit_block12 both GreedyFeatureInit per_frame networks.HungarianPredictor false false false"
+
+    # "no_predictor_w_contrast false false false false true 0.5 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder false false false"
+    # "no_predictor_wo_contrast false false false false true 0.0 0.0 0 vit_block12 both FixedLearnedInit first_frame networks.TransformerEncoder false false false"
+
+    "per_frame_no_predictor_w_contrast false false false false true 0.5 0.0 0 vit_block12 both FixedLearnedInit per_frame networks.TransformerEncoder false false false true"
+    "per_frame_no_predictor_wo_contrast false false false false true 0.0 0.0 0 vit_block12 both FixedLearnedInit per_frame networks.TransformerEncoder false false false true"
+
     )
 
 SEED=42
     
 for config in "${CONFIGS[@]}"; do
-    read -r exp_name use_ttt3r use_gated use_gated_predictor use_ttt use_gru loss_ss loss_cycle window_size features cross_mode init_name init_mode predictor <<< "$config"
+    read -r exp_name use_ttt3r use_gated use_gated_predictor use_ttt use_gru loss_ss loss_cycle window_size features cross_mode init_name init_mode predictor skip_corrector use_pos_embed aggregate skip_predictor <<< "$config"
 
     echo "Submitting: $exp_name"
     
@@ -141,6 +194,10 @@ for config in "${CONFIGS[@]}"; do
         "model.initializer.name=${init_name}" \
         "model.initializer.init_mode=${init_mode}" \
         "model.predictor.name=${predictor}" \
+        "model.latent_processor.skip_corrector=${skip_corrector}" \
+        "model.latent_processor.skip_predictor=${skip_predictor}" \
+        "model.encoder.use_pos_embed=${use_pos_embed}" \
+        "model.initializer.aggregate=${aggregate}" \
         "seed=${SEED}"
 done
 
