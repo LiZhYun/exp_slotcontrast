@@ -280,7 +280,7 @@ class ScanOverTime(nn.Module):
         outputs = []
         for t in range(seq_len):
             # For per-frame init with Hungarian
-            if per_frame_init and is_hungarian and t > 0:
+            if per_frame_init and t > 0:
                 if use_pre_match:
                     # Pre-match: align greedy init to reference BEFORE slot attention
                     state = self.module.predictor.match_to_reference(initial_state[:, t])
