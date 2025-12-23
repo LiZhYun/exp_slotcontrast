@@ -1,6 +1,7 @@
 from typing import Any, Dict, List, Mapping, Optional, Union
 
 import torch
+import torch.nn.functional as F
 from torch import nn
 
 from slotcontrast.utils import make_build_fn
@@ -146,6 +147,18 @@ class LatentProcessor(nn.Module):
             "corrector": corrector_output,
             "initial_queries": state,  # Store for cycle consistency
         }
+
+        # Predictor analysis: measure if predictor is ~identity
+        if self.predictor and not self.skip_predictor:
+            with torch.no_grad():
+                # Cosine similarity (1.0 = identical direction)
+                cos_sim = F.cosine_similarity(updated_state, predicted_state, dim=-1).mean()
+                # Relative change (0.0 = identical)
+                delta_norm = (predicted_state - updated_state).norm()
+                input_norm = updated_state.norm() + 1e-8
+                rel_change = delta_norm / input_norm
+                result["predictor_cos_sim"] = cos_sim
+                result["predictor_rel_change"] = rel_change
 
         return result
 

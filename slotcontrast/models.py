@@ -520,6 +520,11 @@ class ObjectCentricModel(pl.LightningModule):
             to_log = {f"train/{name}": loss for name, loss in losses.items()}
             to_log["train/loss"] = total_loss
 
+        # Log predictor analysis metrics (if available, averaged over frames)
+        if "predictor_cos_sim" in outputs["processor"]:
+            to_log["train/predictor_cos_sim"] = outputs["processor"]["predictor_cos_sim"].mean()
+            to_log["train/predictor_rel_change"] = outputs["processor"]["predictor_rel_change"].mean()
+
         if self.train_metrics and self.dynamics_predictor:
             prediction_batch = copy.deepcopy(batch)
             for k, v in prediction_batch.items():
@@ -567,6 +572,11 @@ class ObjectCentricModel(pl.LightningModule):
         else:
             to_log = {f"val/{name}": loss for name, loss in losses.items()}
             to_log["val/loss"] = total_loss
+
+        # Log predictor analysis metrics (if available, averaged over frames)
+        if "predictor_cos_sim" in outputs["processor"]:
+            to_log["val/predictor_cos_sim"] = outputs["processor"]["predictor_cos_sim"].mean()
+            to_log["val/predictor_rel_change"] = outputs["processor"]["predictor_rel_change"].mean()
 
         if self.dynamics_predictor:
             prediction_batch = deepcopy(batch)
