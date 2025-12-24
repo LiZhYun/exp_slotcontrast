@@ -291,6 +291,8 @@ class ScanOverTime(nn.Module):
 
         state = initial_state[:, 0] if per_frame_init else initial_state
         outputs = []
+        match_indices_list = [] if is_hungarian else None
+        
         for t in range(seq_len):
             # For per-frame init with Hungarian
             if per_frame_init and t > 0:
@@ -308,8 +310,19 @@ class ScanOverTime(nn.Module):
                 output = self.module(state, inputs[:, t], init_state=init_state_t)
             outputs.append(output)
             state = output[self.next_state_key]
+            
+            # Collect Hungarian match indices
+            if is_hungarian:
+                indices = self.module.predictor.get_last_match_indices()
+                match_indices_list.append(indices)
 
-        return merge_dict_trees(outputs, axis=1)
+        result = merge_dict_trees(outputs, axis=1)
+        
+        # Add match indices to result [B, T, N] or None for first frame
+        if match_indices_list is not None:
+            result["hungarian_match_indices"] = match_indices_list
+        
+        return result
 
 
 def merge_dict_trees(trees: List[Mapping], axis: int = 0):

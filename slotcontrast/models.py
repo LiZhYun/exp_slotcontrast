@@ -525,6 +525,12 @@ class ObjectCentricModel(pl.LightningModule):
             to_log["train/predictor_cos_sim"] = outputs["processor"]["predictor_cos_sim"].mean()
             to_log["train/predictor_rel_change"] = outputs["processor"]["predictor_rel_change"].mean()
 
+        # Log Hungarian match indices (fraction of identity matches)
+        if "hungarian_match_indices" in outputs["processor"]:
+            to_log["train/hungarian_identity_ratio"] = self._compute_identity_ratio(
+                outputs["processor"]["hungarian_match_indices"]
+            )
+
         if self.train_metrics and self.dynamics_predictor:
             prediction_batch = copy.deepcopy(batch)
             for k, v in prediction_batch.items():
@@ -578,6 +584,12 @@ class ObjectCentricModel(pl.LightningModule):
             to_log["val/predictor_cos_sim"] = outputs["processor"]["predictor_cos_sim"].mean()
             to_log["val/predictor_rel_change"] = outputs["processor"]["predictor_rel_change"].mean()
 
+        # Log Hungarian match indices (fraction of identity matches)
+        if "hungarian_match_indices" in outputs["processor"]:
+            to_log["val/hungarian_identity_ratio"] = self._compute_identity_ratio(
+                outputs["processor"]["hungarian_match_indices"]
+            )
+
         if self.dynamics_predictor:
             prediction_batch = deepcopy(batch)
             for k, v in prediction_batch.items():
@@ -629,6 +641,21 @@ class ObjectCentricModel(pl.LightningModule):
                 log_dict[f"{name}/{k}"] = v
         else:
             log_dict[name] = values
+
+    @staticmethod
+    def _compute_identity_ratio(match_indices_list: List[Optional[torch.Tensor]]) -> torch.Tensor:
+        """Compute fraction of slots that maintain identity mapping across frames."""
+        total_matches = 0
+        identity_matches = 0
+        for indices in match_indices_list:
+            if indices is not None:  # Skip first frame (no matching)
+                B, N = indices.shape
+                identity = torch.arange(N, device=indices.device).unsqueeze(0).expand(B, N)
+                identity_matches += (indices == identity).sum().item()
+                total_matches += B * N
+        if total_matches == 0:
+            return torch.tensor(1.0)  # No matching happened, assume identity
+        return torch.tensor(identity_matches / total_matches)
 
     def _log_inputs(
         self,

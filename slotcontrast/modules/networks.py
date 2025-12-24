@@ -1333,11 +1333,17 @@ class HungarianPredictor(nn.Module):
         self.pre_match = pre_match
         self._prev_slots: Optional[torch.Tensor] = None
         self._prev_greedy: Optional[torch.Tensor] = None  # For greedy→greedy matching
+        self._last_match_indices: Optional[torch.Tensor] = None  # [B, N] matching indices
 
     def reset(self):
         """Reset state for new video sequence."""
         self._prev_slots = None
         self._prev_greedy = None
+        self._last_match_indices = None
+    
+    def get_last_match_indices(self) -> Optional[torch.Tensor]:
+        """Return last matching indices [B, N] where indices[b, i] = source slot for position i."""
+        return self._last_match_indices
 
     def match_to_reference(self, slots: torch.Tensor) -> torch.Tensor:
         """Match input slots to stored reference (for pre-matching before slot attention)."""
@@ -1345,15 +1351,20 @@ class HungarianPredictor(nn.Module):
             # Greedy→greedy: match to previous greedy init, store matched as new reference
             if self._prev_greedy is None:
                 self._prev_greedy = slots.detach()
+                self._last_match_indices = None
                 return slots
-            matched = self._hungarian_match(self._prev_greedy, slots)
+            matched, indices = self._hungarian_match(self._prev_greedy, slots, return_indices=True)
             self._prev_greedy = matched.detach()
+            self._last_match_indices = indices
             return matched
         else:
             # Original pre_match: match to previous slot attention output
             if self._prev_slots is None:
+                self._last_match_indices = None
                 return slots
-            return self._hungarian_match(self._prev_slots, slots)
+            matched, indices = self._hungarian_match(self._prev_slots, slots, return_indices=True)
+            self._last_match_indices = indices
+            return matched
 
     def forward(
         self,
@@ -1388,28 +1399,31 @@ class HungarianPredictor(nn.Module):
         
         if reference_slots is None:
             self._prev_slots = slots.detach()
+            self._last_match_indices = None
             if return_weights:
                 return slots, None
             return slots
         
-        reordered_slots = self._hungarian_match(reference_slots, slots)
+        reordered_slots, indices = self._hungarian_match(reference_slots, slots, return_indices=True)
         self._prev_slots = reordered_slots.detach()
+        self._last_match_indices = indices
         
         if return_weights:
             return reordered_slots, None
         return reordered_slots
 
     def _hungarian_match(
-        self, prev_slots: torch.Tensor, curr_slots: torch.Tensor
-    ) -> torch.Tensor:
+        self, prev_slots: torch.Tensor, curr_slots: torch.Tensor, return_indices: bool = False
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         """Apply Hungarian matching to align curr_slots with prev_slots ordering.
         
         Args:
             prev_slots: Reference slots from previous frame [B, N, D]
             curr_slots: Current slots to reorder [B, N, D]
+            return_indices: If True, also return matching indices
         
         Returns:
-            Reordered curr_slots [B, N, D]
+            Reordered curr_slots [B, N, D], and optionally indices [B, N]
         """
         from scipy.optimize import linear_sum_assignment
         
@@ -1432,12 +1446,17 @@ class HungarianPredictor(nn.Module):
         
         # Apply Hungarian algorithm per batch element
         reordered_list = []
+        indices_list = []
         for b in range(B):
             cost_np = cost_matrix[b].detach().cpu().numpy()
             row_ind, col_ind = linear_sum_assignment(cost_np)
             # col_ind tells us which curr_slot should go to which position
-            # We need inverse mapping: for each prev position, which curr slot
             reordered = curr_slots[b, col_ind]  # [N, D]
             reordered_list.append(reordered)
+            indices_list.append(torch.tensor(col_ind, device=device, dtype=torch.long))
         
-        return torch.stack(reordered_list, dim=0)  # [B, N, D]
+        reordered = torch.stack(reordered_list, dim=0)  # [B, N, D]
+        if return_indices:
+            indices = torch.stack(indices_list, dim=0)  # [B, N]
+            return reordered, indices
+        return reordered
