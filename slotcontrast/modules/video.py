@@ -141,8 +141,17 @@ class LatentProcessor(nn.Module):
         else:
             predicted_state = updated_state
 
+        # Determine output state: use reordered slots if Hungarian post-match
+        # (Hungarian post-match reorders slots to match temporal identity, so decoder should use reordered)
+        is_hungarian_postmatch = (
+            self.predictor is not None
+            and hasattr(self.predictor, '_hungarian_match')
+            and not getattr(self.predictor, 'pre_match', False)
+        )
+        output_state = predicted_state if is_hungarian_postmatch else updated_state
+
         result = {
-            "state": updated_state,
+            "state": output_state,
             "state_predicted": predicted_state,
             "corrector": corrector_output,
             "initial_queries": state,  # Store for cycle consistency
