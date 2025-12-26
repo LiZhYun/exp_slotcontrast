@@ -55,13 +55,16 @@ model:
     loss_cycle: 0.5
 
   initializer:
-    name: FixedLearnedInit # FixedLearnedInit or GreedyFeatureInit
+    name: FixedLearnedInit # FixedLearnedInit or GreedyFeatureInit or ClusterFeatureInit
     n_slots: ${globals.NUM_SLOTS}
     dim: ${globals.SLOT_DIM}
     saliency_mode: norm  # 'norm', 'entropy', 'variance', 'pca'
     init_mode: first_frame  # per_frame or first_frame
     aggregate: false           # Enable patch aggregation
     aggregate_threshold: 0.5  # Include patches with sim > 0.5
+    cluster_method: agglomerative
+    affinity: cosine
+    linkage: average
 
   encoder:
     backbone:

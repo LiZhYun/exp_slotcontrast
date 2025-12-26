@@ -1,5 +1,6 @@
 from typing import Optional
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -161,3 +162,160 @@ class GreedyFeatureInit(nn.Module):
         
         return greedy_slot_initialization(features, self.n_slots, self.temperature, 
                                            self.saliency_mode, self.aggregate, self.aggregate_threshold)
+
+
+def cluster_and_centroid(
+    features: torch.Tensor,
+    n_clusters: int,
+    method: str = "agglomerative",
+    affinity: str = "cosine",
+    linkage: str = "average",
+) -> torch.Tensor:
+    """Cluster features and return centroids.
+    
+    Args:
+        features: [N, D] feature vectors
+        n_clusters: Number of clusters
+        method: 'agglomerative', 'kmeans', or 'spectral'
+        affinity: Distance metric for agglomerative ('cosine', 'euclidean')
+        linkage: Linkage type for agglomerative ('average', 'complete', 'single')
+    
+    Returns:
+        centroids: [n_clusters, D] cluster centroids
+    """
+    from sklearn.cluster import AgglomerativeClustering, KMeans, SpectralClustering
+    
+    device = features.device
+    features_np = features.detach().cpu().numpy()
+    N, D = features_np.shape
+    
+    # Handle edge case: fewer features than clusters
+    if N <= n_clusters:
+        # Pad with mean if needed
+        centroids = np.zeros((n_clusters, D), dtype=features_np.dtype)
+        centroids[:N] = features_np
+        if N < n_clusters:
+            centroids[N:] = features_np.mean(axis=0)
+        return torch.from_numpy(centroids).to(device)
+    
+    # Run clustering
+    if method == "agglomerative":
+        # For cosine affinity, normalize features first
+        if affinity == "cosine":
+            features_normalized = features_np / (np.linalg.norm(features_np, axis=1, keepdims=True) + 1e-8)
+            clusterer = AgglomerativeClustering(
+                n_clusters=n_clusters, metric="euclidean", linkage=linkage
+            )
+            labels = clusterer.fit_predict(features_normalized)
+        else:
+            clusterer = AgglomerativeClustering(
+                n_clusters=n_clusters, metric=affinity, linkage=linkage
+            )
+            labels = clusterer.fit_predict(features_np)
+    elif method == "kmeans":
+        clusterer = KMeans(n_clusters=n_clusters, n_init=10, random_state=42)
+        labels = clusterer.fit_predict(features_np)
+    elif method == "spectral":
+        clusterer = SpectralClustering(
+            n_clusters=n_clusters, affinity="nearest_neighbors", random_state=42
+        )
+        labels = clusterer.fit_predict(features_np)
+    else:
+        raise ValueError(f"Unknown clustering method: {method}")
+    
+    # Compute centroids
+    centroids = np.zeros((n_clusters, D), dtype=features_np.dtype)
+    for k in range(n_clusters):
+        mask = labels == k
+        if mask.sum() > 0:
+            centroids[k] = features_np[mask].mean(axis=0)
+        else:
+            # Empty cluster: use global mean
+            centroids[k] = features_np.mean(axis=0)
+    
+    return torch.from_numpy(centroids).to(device)
+
+
+def cluster_slot_initialization(
+    features: torch.Tensor,
+    n_slots: int,
+    method: str = "agglomerative",
+    affinity: str = "cosine",
+    linkage: str = "average",
+) -> torch.Tensor:
+    """Cluster features and return centroids as slot initialization.
+    
+    Args:
+        features: [B, N, D] for image or [B*T, N, D] for flattened video
+        n_slots: Number of slots/clusters
+        method: Clustering method
+        affinity: Distance metric
+        linkage: Linkage type
+    
+    Returns:
+        slots: [B, n_slots, D]
+    """
+    # Handle video input [B, T, N, D]
+    if features.ndim == 4:
+        B, T, N, D = features.shape
+        features_flat = features.view(B * T, N, D)
+        slots = cluster_slot_initialization(features_flat, n_slots, method, affinity, linkage)
+        return slots.view(B, T, n_slots, D)
+    
+    B, N, D = features.shape
+    device = features.device
+    
+    # Cluster each batch element
+    slots_list = []
+    for b in range(B):
+        centroids = cluster_and_centroid(
+            features[b], n_slots, method, affinity, linkage
+        )
+        slots_list.append(centroids)
+    
+    return torch.stack(slots_list, dim=0).to(device, dtype=features.dtype)
+
+
+class ClusterFeatureInit(nn.Module):
+    """Initialize slots using cluster centroids of feature patches."""
+    
+    def __init__(
+        self,
+        n_slots: int,
+        dim: int,
+        cluster_method: str = "agglomerative",
+        affinity: str = "cosine",
+        linkage: str = "average",
+        init_mode: str = "first_frame",
+        **kwargs,
+    ):
+        super().__init__()
+        self.n_slots = n_slots
+        self.dim = dim
+        self.cluster_method = cluster_method
+        self.affinity = affinity
+        self.linkage = linkage
+        self.init_mode = init_mode
+        self.fallback = nn.Parameter(torch.randn(1, n_slots, dim) * dim**-0.5)
+
+    def forward(self, batch_size: int, features: Optional[torch.Tensor] = None) -> torch.Tensor:
+        if features is None:
+            return self.fallback.expand(batch_size, -1, -1)
+        
+        if features.ndim == 4:  # Video: [B, T, N, D]
+            if self.init_mode == "first_frame":
+                return cluster_slot_initialization(
+                    features[:, 0], self.n_slots, 
+                    self.cluster_method, self.affinity, self.linkage
+                )
+            else:  # per_frame
+                return cluster_slot_initialization(
+                    features, self.n_slots,
+                    self.cluster_method, self.affinity, self.linkage
+                )
+        
+        # Image: [B, N, D]
+        return cluster_slot_initialization(
+            features, self.n_slots,
+            self.cluster_method, self.affinity, self.linkage
+        )
