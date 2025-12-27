@@ -112,6 +112,34 @@ def greedy_slot_initialization(
         
         # High local_sim + low global_sim = interior of distinct object
         saliency = local_sim - global_sim
+    elif saliency_mode == "local_consistency_pca":
+        # Combined: local consistency weighted by PCA distinctiveness
+        # Selects interiors of DISTINCTIVE objects (not background interiors)
+        patch_hw = int(N ** 0.5)
+        
+        # 1. Local consistency score
+        local_sim = compute_neighbor_similarity(features_norm, patch_hw, patch_hw, neighbor_radius)
+        global_mean = F.normalize(features.mean(dim=1, keepdim=True), dim=-1)
+        global_sim = (features_norm * global_mean).sum(dim=-1)
+        local_consistency = local_sim - global_sim  # [B, N]
+        
+        # 2. PCA distinctiveness score
+        mean_feat = features.mean(dim=1, keepdim=True)
+        centered = features - mean_feat
+        cov = torch.bmm(centered.transpose(1, 2), centered) / (N - 1)
+        k = min(n_slots, D // 4, 32)
+        _, eigenvectors = torch.linalg.eigh(cov)
+        top_vecs = eigenvectors[:, :, -k:]
+        pca_score = torch.bmm(centered, top_vecs).norm(dim=-1)  # [B, N]
+        
+        # Normalize PCA score to [0, 1] range
+        pca_min = pca_score.min(dim=-1, keepdim=True)[0]
+        pca_max = pca_score.max(dim=-1, keepdim=True)[0]
+        pca_normalized = (pca_score - pca_min) / (pca_max - pca_min + 1e-8)
+        
+        # Combine: local_consistency * (1 + pca_normalized)
+        # High when: interior (local_consistency > 0) AND distinctive (high pca)
+        saliency = local_consistency * (1 + pca_normalized)
     else:
         saliency = features.norm(dim=-1)
     
