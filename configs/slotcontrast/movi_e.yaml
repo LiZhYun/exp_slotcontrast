@@ -58,7 +58,8 @@ model:
     name: FixedLearnedInit # FixedLearnedInit or GreedyFeatureInit or ClusterFeatureInit
     n_slots: ${globals.NUM_SLOTS}
     dim: ${globals.SLOT_DIM}
-    saliency_mode: norm  # 'norm', 'entropy', 'variance', 'pca'
+    saliency_mode: norm  # 'norm', 'entropy', 'variance', 'pca', 'local_consistency'
+    neighbor_radius: 1
     init_mode: first_frame  # per_frame or first_frame
     aggregate: false           # Enable patch aggregation
     aggregate_threshold: 0.5  # Include patches with sim > 0.5

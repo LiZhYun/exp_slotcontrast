@@ -13,6 +13,43 @@ def build(config, name: str):
     pass  # No special module building needed
 
 
+def compute_neighbor_similarity(
+    features_norm: torch.Tensor, patch_h: int, patch_w: int, radius: int = 1
+) -> torch.Tensor:
+    """Compute mean cosine similarity to spatial neighbors for each patch.
+    
+    Args:
+        features_norm: [B, N, D] L2-normalized features
+        patch_h, patch_w: Spatial dimensions of patch grid
+        radius: Neighborhood radius (1 = 3x3, 2 = 5x5)
+    
+    Returns:
+        local_sim: [B, N] mean similarity to neighbors
+    """
+    B, N, D = features_norm.shape
+    
+    # Reshape to spatial grid: [B, D, H, W]
+    features_spatial = features_norm.view(B, patch_h, patch_w, D).permute(0, 3, 1, 2)
+    
+    # Use unfold to extract neighbor windows
+    kernel_size = 2 * radius + 1
+    # Unfold: [B, D, H, W] -> [B, D*k*k, H*W]
+    unfolded = F.unfold(features_spatial, kernel_size=kernel_size, padding=radius)
+    # Reshape to [B, D, k*k, N]
+    unfolded = unfolded.view(B, D, kernel_size * kernel_size, N)
+    
+    # Center patch features: [B, D, N]
+    center = features_spatial.view(B, D, N)
+    
+    # Dot product between center and all neighbors: [B, k*k, N]
+    similarity = torch.einsum("bdn,bdkn->bkn", center, unfolded)
+    
+    # Mean over neighbors (k*k includes self, but that's fine)
+    local_sim = similarity.mean(dim=1)  # [B, N]
+    
+    return local_sim
+
+
 def greedy_slot_initialization(
     features: torch.Tensor,
     n_slots: int,
@@ -20,12 +57,16 @@ def greedy_slot_initialization(
     saliency_mode: str = "norm",
     aggregate: bool = False,
     aggregate_threshold: float = 0.0,
+    neighbor_radius: int = 1,
 ) -> torch.Tensor:
     # Handle video input [B, T, N, D]
     if features.ndim == 4:
         B, T, N, D = features.shape
         features_flat = features.view(B * T, N, D)
-        slots = greedy_slot_initialization(features_flat, n_slots, temperature, saliency_mode, aggregate, aggregate_threshold)
+        slots = greedy_slot_initialization(
+            features_flat, n_slots, temperature, saliency_mode, 
+            aggregate, aggregate_threshold, neighbor_radius
+        )
         return slots.view(B, T, n_slots, D)
     
     B, N, D = features.shape
@@ -57,6 +98,20 @@ def greedy_slot_initialization(
         top_vecs = eigenvectors[:, :, -k:]  # [B, D, k]
         # Projection magnitude onto top PCs
         saliency = torch.bmm(centered, top_vecs).norm(dim=-1)  # [B, N]
+    elif saliency_mode == "local_consistency":
+        # Local consistency: similar to neighbors, different from global
+        # Selects object interiors rather than boundaries
+        patch_hw = int(N ** 0.5)  # Assume square grid
+        
+        # Local similarity: mean cosine sim to spatial neighbors
+        local_sim = compute_neighbor_similarity(features_norm, patch_hw, patch_hw, neighbor_radius)
+        
+        # Global similarity: cosine sim to global mean
+        global_mean = F.normalize(features.mean(dim=1, keepdim=True), dim=-1)  # [B, 1, D]
+        global_sim = (features_norm * global_mean).sum(dim=-1)  # [B, N]
+        
+        # High local_sim + low global_sim = interior of distinct object
+        saliency = local_sim - global_sim
     else:
         saliency = features.norm(dim=-1)
     
@@ -136,7 +191,8 @@ class FixedLearnedInit(nn.Module):
 class GreedyFeatureInit(nn.Module):
     def __init__(self, n_slots: int, dim: int, temperature: float = 0.1, 
                  saliency_mode: str = "norm", init_mode: str = "first_frame",
-                 aggregate: bool = False, aggregate_threshold: float = 0.5):
+                 aggregate: bool = False, aggregate_threshold: float = 0.5,
+                 neighbor_radius: int = 1, **kwargs):
         super().__init__()
         self.n_slots = n_slots
         self.dim = dim
@@ -145,6 +201,7 @@ class GreedyFeatureInit(nn.Module):
         self.init_mode = init_mode
         self.aggregate = aggregate
         self.aggregate_threshold = aggregate_threshold
+        self.neighbor_radius = neighbor_radius
         self.fallback = nn.Parameter(torch.randn(1, n_slots, dim) * dim**-0.5)
 
     def forward(self, batch_size: int, features: Optional[torch.Tensor] = None) -> torch.Tensor:
@@ -154,14 +211,23 @@ class GreedyFeatureInit(nn.Module):
         if features.ndim == 4:
             if self.init_mode == "first_frame":
                 first_frame_feat = features[:, 0]
-                return greedy_slot_initialization(first_frame_feat, self.n_slots, self.temperature, 
-                                                   self.saliency_mode, self.aggregate, self.aggregate_threshold)
+                return greedy_slot_initialization(
+                    first_frame_feat, self.n_slots, self.temperature, 
+                    self.saliency_mode, self.aggregate, self.aggregate_threshold,
+                    self.neighbor_radius
+                )
             else:
-                return greedy_slot_initialization(features, self.n_slots, self.temperature, 
-                                                   self.saliency_mode, self.aggregate, self.aggregate_threshold)
+                return greedy_slot_initialization(
+                    features, self.n_slots, self.temperature, 
+                    self.saliency_mode, self.aggregate, self.aggregate_threshold,
+                    self.neighbor_radius
+                )
         
-        return greedy_slot_initialization(features, self.n_slots, self.temperature, 
-                                           self.saliency_mode, self.aggregate, self.aggregate_threshold)
+        return greedy_slot_initialization(
+            features, self.n_slots, self.temperature, 
+            self.saliency_mode, self.aggregate, self.aggregate_threshold,
+            self.neighbor_radius
+        )
 
 
 def cluster_and_centroid(
