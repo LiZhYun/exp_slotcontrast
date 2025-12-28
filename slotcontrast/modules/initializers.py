@@ -58,6 +58,7 @@ def greedy_slot_initialization(
     aggregate: bool = False,
     aggregate_threshold: float = 0.0,
     neighbor_radius: int = 1,
+    saliency_smoothing: int = 0,
 ) -> torch.Tensor:
     # Handle video input [B, T, N, D]
     if features.ndim == 4:
@@ -65,7 +66,7 @@ def greedy_slot_initialization(
         features_flat = features.view(B * T, N, D)
         slots = greedy_slot_initialization(
             features_flat, n_slots, temperature, saliency_mode, 
-            aggregate, aggregate_threshold, neighbor_radius
+            aggregate, aggregate_threshold, neighbor_radius, saliency_smoothing
         )
         return slots.view(B, T, n_slots, D)
     
@@ -142,6 +143,19 @@ def greedy_slot_initialization(
         saliency = local_consistency * (1 + pca_normalized)
     else:
         saliency = features.norm(dim=-1)
+    
+    # Optional: Spatial smoothing of saliency (shifts peaks toward region centers)
+    if saliency_smoothing > 0:
+        patch_hw = int(N ** 0.5)  # Assume square grid
+        saliency_spatial = saliency.view(B, 1, patch_hw, patch_hw)
+        kernel_size = 2 * saliency_smoothing + 1  # smoothing=1 -> 3x3, smoothing=2 -> 5x5
+        saliency_smoothed = F.avg_pool2d(
+            saliency_spatial, 
+            kernel_size=kernel_size, 
+            stride=1, 
+            padding=saliency_smoothing
+        )
+        saliency = saliency_smoothed.view(B, N)
     
     # Greedy selection
     slots = []
@@ -220,7 +234,7 @@ class GreedyFeatureInit(nn.Module):
     def __init__(self, n_slots: int, dim: int, temperature: float = 0.1, 
                  saliency_mode: str = "norm", init_mode: str = "first_frame",
                  aggregate: bool = False, aggregate_threshold: float = 0.5,
-                 neighbor_radius: int = 1, **kwargs):
+                 neighbor_radius: int = 1, saliency_smoothing: int = 0, **kwargs):
         super().__init__()
         self.n_slots = n_slots
         self.dim = dim
@@ -228,6 +242,7 @@ class GreedyFeatureInit(nn.Module):
         self.saliency_mode = saliency_mode
         self.init_mode = init_mode
         self.aggregate = aggregate
+        self.saliency_smoothing = saliency_smoothing
         self.aggregate_threshold = aggregate_threshold
         self.neighbor_radius = neighbor_radius
         self.fallback = nn.Parameter(torch.randn(1, n_slots, dim) * dim**-0.5)
@@ -242,19 +257,19 @@ class GreedyFeatureInit(nn.Module):
                 return greedy_slot_initialization(
                     first_frame_feat, self.n_slots, self.temperature, 
                     self.saliency_mode, self.aggregate, self.aggregate_threshold,
-                    self.neighbor_radius
+                    self.neighbor_radius, self.saliency_smoothing
                 )
             else:
                 return greedy_slot_initialization(
                     features, self.n_slots, self.temperature, 
                     self.saliency_mode, self.aggregate, self.aggregate_threshold,
-                    self.neighbor_radius
+                    self.neighbor_radius, self.saliency_smoothing
                 )
         
         return greedy_slot_initialization(
             features, self.n_slots, self.temperature, 
             self.saliency_mode, self.aggregate, self.aggregate_threshold,
-            self.neighbor_radius
+            self.neighbor_radius, self.saliency_smoothing
         )
 
 

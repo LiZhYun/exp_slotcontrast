@@ -60,6 +60,7 @@ model:
     dim: ${globals.SLOT_DIM}
     saliency_mode: norm  # 'norm', 'entropy', 'variance', 'pca', 'local_consistency', 'local_consistency_pca'
     neighbor_radius: 1
+    saliency_smoothing: 0 # 0=no smoothing, 1=3x3, 2=5x5, 3=7x7, etc.
     init_mode: first_frame  # per_frame or first_frame
     aggregate: false           # Enable patch aggregation
     aggregate_threshold: 0.5  # Include patches with sim > 0.5
