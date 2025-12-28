@@ -59,6 +59,9 @@ def greedy_slot_initialization(
     aggregate_threshold: float = 0.0,
     neighbor_radius: int = 1,
     saliency_smoothing: int = 0,
+    selection_mode: str = "hard",
+    soft_topk: int = 5,
+    neighbor_avg_radius: int = 1,
 ) -> torch.Tensor:
     # Handle video input [B, T, N, D]
     if features.ndim == 4:
@@ -66,7 +69,8 @@ def greedy_slot_initialization(
         features_flat = features.view(B * T, N, D)
         slots = greedy_slot_initialization(
             features_flat, n_slots, temperature, saliency_mode, 
-            aggregate, aggregate_threshold, neighbor_radius, saliency_smoothing
+            aggregate, aggregate_threshold, neighbor_radius, saliency_smoothing,
+            selection_mode, soft_topk, neighbor_avg_radius
         )
         return slots.view(B, T, n_slots, D)
     
@@ -160,29 +164,83 @@ def greedy_slot_initialization(
     # Greedy selection
     slots = []
     mask = torch.ones(B, N, device=device)
+    patch_hw = int(N ** 0.5)  # For spatial operations
     
     for _ in range(n_slots):
         masked_saliency = saliency * mask
-        idx = masked_saliency.argmax(dim=-1)  # [B]
-        selected = features[torch.arange(B, device=device), idx]  # [B, D]
-        selected_norm = F.normalize(selected, dim=-1).unsqueeze(1)  # [B, 1, D]
-        similarity = (features_norm * selected_norm).sum(dim=-1)  # [B, N]
         
+        if selection_mode == "soft":
+            # Soft selection: weighted average of top-k patches
+            topk_values, topk_indices = masked_saliency.topk(soft_topk, dim=-1)  # [B, k]
+            topk_weights = F.softmax(topk_values / temperature, dim=-1)  # [B, k]
+            topk_features = features.gather(1, topk_indices.unsqueeze(-1).expand(-1, -1, D))  # [B, k, D]
+            slot = (topk_weights.unsqueeze(-1) * topk_features).sum(dim=1)  # [B, D]
+            # Use top-1 for suppression calculation
+            idx = topk_indices[:, 0]
+            selected = features[torch.arange(B, device=device), idx]
+        elif selection_mode == "neighbor_avg":
+            # Post-selection neighborhood averaging
+            idx = masked_saliency.argmax(dim=-1)  # [B]
+            selected = features[torch.arange(B, device=device), idx]  # [B, D]
+            # Convert idx to spatial coordinates and average with neighbors
+            idx_h = idx // patch_hw  # [B]
+            idx_w = idx % patch_hw   # [B]
+            # Gather neighbor features and average
+            slot = _average_with_spatial_neighbors(
+                features, idx_h, idx_w, patch_hw, neighbor_avg_radius
+            )
+        else:  # "hard" - original behavior
+            idx = masked_saliency.argmax(dim=-1)  # [B]
+            selected = features[torch.arange(B, device=device), idx]  # [B, D]
+            slot = selected
+        
+        # Optional: aggregate (can combine with any selection mode)
         if aggregate:
-            # Aggregate similar patches into slot via weighted average
+            selected_norm = F.normalize(selected, dim=-1).unsqueeze(1)  # [B, 1, D]
+            similarity = (features_norm * selected_norm).sum(dim=-1)  # [B, N]
             agg_weights = (similarity * mask).clamp(min=0)  # [B, N]
             agg_weights = agg_weights * (similarity > aggregate_threshold).float()
             agg_weights = agg_weights / (agg_weights.sum(dim=-1, keepdim=True) + 1e-8)
             slot = torch.einsum("bn,bnd->bd", agg_weights, features)
-        else:
-            slot = selected
+        
         slots.append(slot)
         
-        # Suppress similar features
+        # Suppress similar features (use selected for suppression regardless of mode)
+        selected_norm = F.normalize(selected, dim=-1).unsqueeze(1)
+        similarity = (features_norm * selected_norm).sum(dim=-1)
         suppression = 1 - similarity.clamp(0, 1)
         mask = mask * suppression
     
     return torch.stack(slots, dim=1)  # [B, n_slots, D]
+
+
+def _average_with_spatial_neighbors(
+    features: torch.Tensor,
+    idx_h: torch.Tensor,
+    idx_w: torch.Tensor,
+    patch_hw: int,
+    radius: int,
+) -> torch.Tensor:
+    """Average selected patch with its spatial neighbors."""
+    B, N, D = features.shape
+    device = features.device
+    
+    # Reshape features to spatial grid
+    features_spatial = features.view(B, patch_hw, patch_hw, D)
+    
+    # Collect neighbor features for each batch element
+    slots = []
+    for b in range(B):
+        h, w = idx_h[b].item(), idx_w[b].item()
+        h_min, h_max = max(0, h - radius), min(patch_hw, h + radius + 1)
+        w_min, w_max = max(0, w - radius), min(patch_hw, w + radius + 1)
+        
+        # Get neighbor patch features and average
+        neighbor_feats = features_spatial[b, h_min:h_max, w_min:w_max, :]  # [h, w, D]
+        slot = neighbor_feats.mean(dim=(0, 1))  # [D]
+        slots.append(slot)
+    
+    return torch.stack(slots, dim=0)  # [B, D]
 
 
 class RandomInit(nn.Module):
@@ -234,7 +292,9 @@ class GreedyFeatureInit(nn.Module):
     def __init__(self, n_slots: int, dim: int, temperature: float = 0.1, 
                  saliency_mode: str = "norm", init_mode: str = "first_frame",
                  aggregate: bool = False, aggregate_threshold: float = 0.5,
-                 neighbor_radius: int = 1, saliency_smoothing: int = 0, **kwargs):
+                 neighbor_radius: int = 1, saliency_smoothing: int = 0,
+                 selection_mode: str = "hard", soft_topk: int = 5,
+                 neighbor_avg_radius: int = 1, **kwargs):
         super().__init__()
         self.n_slots = n_slots
         self.dim = dim
@@ -245,6 +305,9 @@ class GreedyFeatureInit(nn.Module):
         self.saliency_smoothing = saliency_smoothing
         self.aggregate_threshold = aggregate_threshold
         self.neighbor_radius = neighbor_radius
+        self.selection_mode = selection_mode
+        self.soft_topk = soft_topk
+        self.neighbor_avg_radius = neighbor_avg_radius
         self.fallback = nn.Parameter(torch.randn(1, n_slots, dim) * dim**-0.5)
 
     def forward(self, batch_size: int, features: Optional[torch.Tensor] = None) -> torch.Tensor:
@@ -257,19 +320,22 @@ class GreedyFeatureInit(nn.Module):
                 return greedy_slot_initialization(
                     first_frame_feat, self.n_slots, self.temperature, 
                     self.saliency_mode, self.aggregate, self.aggregate_threshold,
-                    self.neighbor_radius, self.saliency_smoothing
+                    self.neighbor_radius, self.saliency_smoothing,
+                    self.selection_mode, self.soft_topk, self.neighbor_avg_radius
                 )
             else:
                 return greedy_slot_initialization(
                     features, self.n_slots, self.temperature, 
                     self.saliency_mode, self.aggregate, self.aggregate_threshold,
-                    self.neighbor_radius, self.saliency_smoothing
+                    self.neighbor_radius, self.saliency_smoothing,
+                    self.selection_mode, self.soft_topk, self.neighbor_avg_radius
                 )
         
         return greedy_slot_initialization(
             features, self.n_slots, self.temperature, 
             self.saliency_mode, self.aggregate, self.aggregate_threshold,
-            self.neighbor_radius, self.saliency_smoothing
+            self.neighbor_radius, self.saliency_smoothing,
+            self.selection_mode, self.soft_topk, self.neighbor_avg_radius
         )
 
 
