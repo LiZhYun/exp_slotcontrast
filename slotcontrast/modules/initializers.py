@@ -78,6 +78,7 @@ def greedy_slot_initialization(
     selection_mode: str = "hard",
     soft_topk: int = 5,
     neighbor_avg_radius: int = 1,
+    saliency_alpha: float = 1.0,
 ) -> torch.Tensor:
     # Handle video input [B, T, N, D]
     if features.ndim == 4:
@@ -86,7 +87,7 @@ def greedy_slot_initialization(
         slots = greedy_slot_initialization(
             features_flat, n_slots, temperature, saliency_mode, 
             aggregate, aggregate_threshold, neighbor_radius, saliency_smoothing,
-            selection_mode, soft_topk, neighbor_avg_radius
+            selection_mode, soft_topk, neighbor_avg_radius, saliency_alpha
         )
         return slots.view(B, T, n_slots, D)
     
@@ -132,7 +133,8 @@ def greedy_slot_initialization(
         global_sim = (features_norm * global_mean).sum(dim=-1)  # [B, N]
         
         # High local_sim + low global_sim = interior of distinct object
-        saliency = local_sim - global_sim
+        # saliency_alpha controls the weight of global_sim penalty
+        saliency = local_sim - saliency_alpha * global_sim
     elif saliency_mode == "local_consistency_pca":
         # Combined: local consistency weighted by PCA distinctiveness
         # Selects interiors of DISTINCTIVE objects (not background interiors)
@@ -384,7 +386,7 @@ class GreedyFeatureInit(nn.Module):
                  aggregate: bool = False, aggregate_threshold: float = 0.5,
                  neighbor_radius: int = 1, saliency_smoothing: int = 0,
                  selection_mode: str = "hard", soft_topk: int = 5,
-                 neighbor_avg_radius: int = 1, **kwargs):
+                 neighbor_avg_radius: int = 1, saliency_alpha: float = 1.0, **kwargs):
         super().__init__()
         self.n_slots = n_slots
         self.dim = dim
@@ -398,6 +400,7 @@ class GreedyFeatureInit(nn.Module):
         self.selection_mode = selection_mode
         self.soft_topk = soft_topk
         self.neighbor_avg_radius = neighbor_avg_radius
+        self.saliency_alpha = saliency_alpha
         self.fallback = nn.Parameter(torch.randn(1, n_slots, dim) * dim**-0.5)
 
     def forward(self, batch_size: int, features: Optional[torch.Tensor] = None) -> torch.Tensor:
@@ -411,21 +414,24 @@ class GreedyFeatureInit(nn.Module):
                     first_frame_feat, self.n_slots, self.temperature, 
                     self.saliency_mode, self.aggregate, self.aggregate_threshold,
                     self.neighbor_radius, self.saliency_smoothing,
-                    self.selection_mode, self.soft_topk, self.neighbor_avg_radius
+                    self.selection_mode, self.soft_topk, self.neighbor_avg_radius,
+                    self.saliency_alpha
                 )
             else:
                 return greedy_slot_initialization(
                     features, self.n_slots, self.temperature, 
                     self.saliency_mode, self.aggregate, self.aggregate_threshold,
                     self.neighbor_radius, self.saliency_smoothing,
-                    self.selection_mode, self.soft_topk, self.neighbor_avg_radius
+                    self.selection_mode, self.soft_topk, self.neighbor_avg_radius,
+                    self.saliency_alpha
                 )
         
         return greedy_slot_initialization(
             features, self.n_slots, self.temperature, 
             self.saliency_mode, self.aggregate, self.aggregate_threshold,
             self.neighbor_radius, self.saliency_smoothing,
-            self.selection_mode, self.soft_topk, self.neighbor_avg_radius
+            self.selection_mode, self.soft_topk, self.neighbor_avg_radius,
+            self.saliency_alpha
         )
 
 
