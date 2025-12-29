@@ -50,6 +50,22 @@ def compute_neighbor_similarity(
     return local_sim
 
 
+def compute_neighbor_similarity_stats(
+    features_norm: torch.Tensor, patch_h: int, patch_w: int, radius: int = 1
+) -> tuple:
+    """Compute mean and variance of cosine similarity to spatial neighbors."""
+    B, N, D = features_norm.shape
+    features_spatial = features_norm.view(B, patch_h, patch_w, D).permute(0, 3, 1, 2)
+    kernel_size = 2 * radius + 1
+    unfolded = F.unfold(features_spatial, kernel_size=kernel_size, padding=radius)
+    unfolded = unfolded.view(B, D, kernel_size * kernel_size, N)
+    center = features_spatial.view(B, D, N)
+    similarity = torch.einsum("bdn,bdkn->bkn", center, unfolded)  # [B, k*k, N]
+    local_sim_mean = similarity.mean(dim=1)
+    local_sim_var = similarity.var(dim=1)
+    return local_sim_mean, local_sim_var
+
+
 def greedy_slot_initialization(
     features: torch.Tensor,
     n_slots: int,
@@ -145,6 +161,80 @@ def greedy_slot_initialization(
         # Combine: local_consistency * (1 + pca_normalized)
         # High when: interior (local_consistency > 0) AND distinctive (high pca)
         saliency = local_consistency * (1 + pca_normalized)
+    elif saliency_mode == "local_consistency_ms":
+        # Multi-scale local consistency: consistent at both small and large scales
+        patch_hw = int(N ** 0.5)
+        local_sim_r1 = compute_neighbor_similarity(features_norm, patch_hw, patch_hw, radius=1)
+        local_sim_r2 = compute_neighbor_similarity(features_norm, patch_hw, patch_hw, radius=2)
+        global_mean = F.normalize(features.mean(dim=1, keepdim=True), dim=-1)
+        global_sim = (features_norm * global_mean).sum(dim=-1)
+        saliency = (local_sim_r1 + local_sim_r2) / 2 - global_sim
+    elif saliency_mode == "local_consistency_uniform":
+        # Local consistency with uniformity: penalize high variance (edge of interior)
+        patch_hw = int(N ** 0.5)
+        local_sim, local_var = compute_neighbor_similarity_stats(features_norm, patch_hw, patch_hw, neighbor_radius)
+        global_mean = F.normalize(features.mean(dim=1, keepdim=True), dim=-1)
+        global_sim = (features_norm * global_mean).sum(dim=-1)
+        # Normalize variance to [0, 1] for balanced weighting
+        var_max = local_var.max(dim=-1, keepdim=True)[0] + 1e-8
+        local_var_norm = local_var / var_max
+        saliency = local_sim - global_sim - 0.5 * local_var_norm
+    elif saliency_mode == "local_consistency_centroid":
+        # Regional centroid: prefer patches near center of coherent regions
+        patch_hw = int(N ** 0.5)
+        local_sim = compute_neighbor_similarity(features_norm, patch_hw, patch_hw, neighbor_radius)
+        global_mean = F.normalize(features.mean(dim=1, keepdim=True), dim=-1)
+        global_sim = (features_norm * global_mean).sum(dim=-1)
+        local_consistency = local_sim - global_sim
+        # Spatial coordinates
+        coords_h = torch.arange(patch_hw, device=device).float()
+        coords_w = torch.arange(patch_hw, device=device).float()
+        grid_h, grid_w = torch.meshgrid(coords_h, coords_w, indexing='ij')
+        # Compute weighted centroid distance using local consistency as weights
+        lc_pos = local_consistency.clamp(min=0).view(B, 1, patch_hw, patch_hw)
+        weights_sum = F.avg_pool2d(lc_pos, 2 * neighbor_radius + 1, stride=1, padding=neighbor_radius)
+        weighted_h = F.avg_pool2d(lc_pos * grid_h.view(1, 1, patch_hw, patch_hw), 2 * neighbor_radius + 1, stride=1, padding=neighbor_radius)
+        weighted_w = F.avg_pool2d(lc_pos * grid_w.view(1, 1, patch_hw, patch_hw), 2 * neighbor_radius + 1, stride=1, padding=neighbor_radius)
+        centroid_h = weighted_h / (weights_sum + 1e-8)
+        centroid_w = weighted_w / (weights_sum + 1e-8)
+        dist_to_centroid = ((grid_h.view(1, 1, patch_hw, patch_hw) - centroid_h) ** 2 +
+                           (grid_w.view(1, 1, patch_hw, patch_hw) - centroid_w) ** 2).sqrt()
+        dist_to_centroid = dist_to_centroid.view(B, N)
+        # Normalize distance
+        dist_max = dist_to_centroid.max(dim=-1, keepdim=True)[0] + 1e-8
+        dist_norm = dist_to_centroid / dist_max
+        saliency = local_consistency - 0.3 * dist_norm
+    elif saliency_mode == "local_consistency_balanced":
+        # Boundary-balanced: avoid patches too deep in interior
+        patch_hw = int(N ** 0.5)
+        local_sim = compute_neighbor_similarity(features_norm, patch_hw, patch_hw, neighbor_radius)
+        global_mean = F.normalize(features.mean(dim=1, keepdim=True), dim=-1)
+        global_sim = (features_norm * global_mean).sum(dim=-1)
+        local_consistency = local_sim - global_sim
+        # Approximate distance to boundary using iterative max-pool of boundary indicator
+        boundary_indicator = (1.0 - local_sim).view(B, 1, patch_hw, patch_hw)
+        dist_to_boundary = boundary_indicator
+        for _ in range(3):
+            dist_to_boundary = F.max_pool2d(dist_to_boundary, 3, stride=1, padding=1)
+        dist_to_boundary = dist_to_boundary.view(B, N)
+        # Normalize and penalize extreme distances (want moderate interior, not too deep)
+        dist_min = dist_to_boundary.min(dim=-1, keepdim=True)[0]
+        dist_max = dist_to_boundary.max(dim=-1, keepdim=True)[0]
+        dist_norm = (dist_to_boundary - dist_min) / (dist_max - dist_min + 1e-8)
+        optimal_dist = 0.4  # Sweet spot: moderately interior
+        dist_penalty = (dist_norm - optimal_dist).abs()
+        saliency = local_consistency - 0.3 * dist_penalty
+    elif saliency_mode == "local_consistency_soft":
+        # Soft global: compare to local background instead of global mean
+        patch_hw = int(N ** 0.5)
+        local_sim = compute_neighbor_similarity(features_norm, patch_hw, patch_hw, neighbor_radius)
+        # Local background: large-scale average (excludes immediate neighborhood)
+        features_spatial = features_norm.view(B, patch_hw, patch_hw, D).permute(0, 3, 1, 2)
+        large_radius = max(3, patch_hw // 4)
+        local_bg = F.avg_pool2d(features_spatial, 2 * large_radius + 1, stride=1, padding=large_radius)
+        local_bg = F.normalize(local_bg.permute(0, 2, 3, 1).reshape(B, N, D), dim=-1)
+        bg_sim = (features_norm * local_bg).sum(dim=-1)
+        saliency = local_sim - bg_sim
     else:
         saliency = features.norm(dim=-1)
     

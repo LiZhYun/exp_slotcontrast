@@ -58,7 +58,7 @@ model:
     name: FixedLearnedInit # FixedLearnedInit or GreedyFeatureInit or ClusterFeatureInit
     n_slots: ${globals.NUM_SLOTS}
     dim: ${globals.SLOT_DIM}
-    saliency_mode: norm  # 'norm', 'entropy', 'variance', 'pca', 'local_consistency', 'local_consistency_pca'
+    saliency_mode: norm  # 'norm', 'entropy', 'variance', 'pca', 'local_consistency', 'local_consistency_pca', 'local_consistency_ms', 'local_consistency_uniform', 'local_consistency_centroid', 'local_consistency_balanced', 'local_consistency_soft'
     neighbor_radius: 1
     selection_mode: hard # hard, soft, neighbor_avg
     soft_topk: 5
