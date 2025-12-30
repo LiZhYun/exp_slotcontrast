@@ -79,6 +79,8 @@ def greedy_slot_initialization(
     soft_topk: int = 5,
     neighbor_avg_radius: int = 1,
     saliency_alpha: float = 1.0,
+    spatial_suppression_radius: int = 0,
+    spatial_suppression_strength: float = 0.5,
 ) -> torch.Tensor:
     # Handle video input [B, T, N, D]
     if features.ndim == 4:
@@ -87,7 +89,8 @@ def greedy_slot_initialization(
         slots = greedy_slot_initialization(
             features_flat, n_slots, temperature, saliency_mode, 
             aggregate, aggregate_threshold, neighbor_radius, saliency_smoothing,
-            selection_mode, soft_topk, neighbor_avg_radius, saliency_alpha
+            selection_mode, soft_topk, neighbor_avg_radius, saliency_alpha,
+            spatial_suppression_radius, spatial_suppression_strength
         )
         return slots.view(B, T, n_slots, D)
     
@@ -300,7 +303,22 @@ def greedy_slot_initialization(
         # Suppress similar features (use selected for suppression regardless of mode)
         selected_norm = F.normalize(selected, dim=-1).unsqueeze(1)
         similarity = (features_norm * selected_norm).sum(dim=-1)
-        suppression = 1 - similarity.clamp(0, 1)
+        feature_suppression = 1 - similarity.clamp(0, 1)
+        
+        # Optional: Spatial suppression (suppress nearby patches regardless of features)
+        if spatial_suppression_radius > 0:
+            idx_h = idx // patch_hw
+            idx_w = idx % patch_hw
+            spatial_suppression = _compute_spatial_suppression(
+                idx_h, idx_w, patch_hw, spatial_suppression_radius, device
+            )
+            # Combine: blend feature and spatial suppression
+            # strength=0: pure feature, strength=1: pure spatial
+            suppression = (1 - spatial_suppression_strength) * feature_suppression + \
+                          spatial_suppression_strength * spatial_suppression
+        else:
+            suppression = feature_suppression
+        
         mask = mask * suppression
     
     return torch.stack(slots, dim=1)  # [B, n_slots, D]
@@ -333,6 +351,41 @@ def _average_with_spatial_neighbors(
         slots.append(slot)
     
     return torch.stack(slots, dim=0)  # [B, D]
+
+
+def _compute_spatial_suppression(
+    idx_h: torch.Tensor,
+    idx_w: torch.Tensor,
+    patch_hw: int,
+    radius: int,
+    device: torch.device,
+) -> torch.Tensor:
+    """Compute spatial suppression mask based on distance from selected patches.
+    
+    Returns suppression values in [0, 1] where 0 = fully suppressed (near selected),
+    1 = not suppressed (far from selected).
+    """
+    B = idx_h.shape[0]
+    N = patch_hw * patch_hw
+    
+    # Create coordinate grids
+    coords_h = torch.arange(patch_hw, device=device).float()
+    coords_w = torch.arange(patch_hw, device=device).float()
+    grid_h, grid_w = torch.meshgrid(coords_h, coords_w, indexing='ij')
+    grid_h = grid_h.view(1, N).expand(B, N)  # [B, N]
+    grid_w = grid_w.view(1, N).expand(B, N)  # [B, N]
+    
+    # Compute distance from each patch to selected patch
+    dist_h = (grid_h - idx_h.float().unsqueeze(1)).abs()  # [B, N]
+    dist_w = (grid_w - idx_w.float().unsqueeze(1)).abs()  # [B, N]
+    dist = torch.max(dist_h, dist_w)  # Chebyshev distance (square neighborhood)
+    
+    # Suppression: 0 within radius, linear ramp to 1 outside
+    # Patches within radius get suppression = 0 (will be multiplied by mask)
+    # Patches outside radius get suppression = 1 (no suppression)
+    suppression = (dist / (radius + 1)).clamp(0, 1)
+    
+    return suppression
 
 
 class RandomInit(nn.Module):
@@ -386,7 +439,9 @@ class GreedyFeatureInit(nn.Module):
                  aggregate: bool = False, aggregate_threshold: float = 0.5,
                  neighbor_radius: int = 1, saliency_smoothing: int = 0,
                  selection_mode: str = "hard", soft_topk: int = 5,
-                 neighbor_avg_radius: int = 1, saliency_alpha: float = 1.0, **kwargs):
+                 neighbor_avg_radius: int = 1, saliency_alpha: float = 1.0,
+                 spatial_suppression_radius: int = 0, spatial_suppression_strength: float = 0.5,
+                 **kwargs):
         super().__init__()
         self.n_slots = n_slots
         self.dim = dim
@@ -401,6 +456,8 @@ class GreedyFeatureInit(nn.Module):
         self.soft_topk = soft_topk
         self.neighbor_avg_radius = neighbor_avg_radius
         self.saliency_alpha = saliency_alpha
+        self.spatial_suppression_radius = spatial_suppression_radius
+        self.spatial_suppression_strength = spatial_suppression_strength
         self.fallback = nn.Parameter(torch.randn(1, n_slots, dim) * dim**-0.5)
 
     def forward(self, batch_size: int, features: Optional[torch.Tensor] = None) -> torch.Tensor:
@@ -415,7 +472,8 @@ class GreedyFeatureInit(nn.Module):
                     self.saliency_mode, self.aggregate, self.aggregate_threshold,
                     self.neighbor_radius, self.saliency_smoothing,
                     self.selection_mode, self.soft_topk, self.neighbor_avg_radius,
-                    self.saliency_alpha
+                    self.saliency_alpha, self.spatial_suppression_radius,
+                    self.spatial_suppression_strength
                 )
             else:
                 return greedy_slot_initialization(
@@ -423,7 +481,8 @@ class GreedyFeatureInit(nn.Module):
                     self.saliency_mode, self.aggregate, self.aggregate_threshold,
                     self.neighbor_radius, self.saliency_smoothing,
                     self.selection_mode, self.soft_topk, self.neighbor_avg_radius,
-                    self.saliency_alpha
+                    self.saliency_alpha, self.spatial_suppression_radius,
+                    self.spatial_suppression_strength
                 )
         
         return greedy_slot_initialization(
@@ -431,7 +490,8 @@ class GreedyFeatureInit(nn.Module):
             self.saliency_mode, self.aggregate, self.aggregate_threshold,
             self.neighbor_radius, self.saliency_smoothing,
             self.selection_mode, self.soft_topk, self.neighbor_avg_radius,
-            self.saliency_alpha
+            self.saliency_alpha, self.spatial_suppression_radius,
+            self.spatial_suppression_strength
         )
 
 
