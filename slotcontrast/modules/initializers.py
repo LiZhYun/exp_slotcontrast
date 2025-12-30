@@ -66,6 +66,44 @@ def compute_neighbor_similarity_stats(
     return local_sim_mean, local_sim_var
 
 
+def compute_gaussian_neighbor_similarity(
+    features_norm: torch.Tensor, patch_h: int, patch_w: int, radius: int = 1, sigma: float = 1.0
+) -> torch.Tensor:
+    """Compute distance-weighted (Gaussian) mean similarity to spatial neighbors."""
+    B, N, D = features_norm.shape
+    device = features_norm.device
+    
+    features_spatial = features_norm.view(B, patch_h, patch_w, D).permute(0, 3, 1, 2)
+    kernel_size = 2 * radius + 1
+    unfolded = F.unfold(features_spatial, kernel_size=kernel_size, padding=radius)
+    unfolded = unfolded.view(B, D, kernel_size * kernel_size, N)
+    center = features_spatial.view(B, D, N)
+    similarity = torch.einsum("bdn,bdkn->bkn", center, unfolded)  # [B, k*k, N]
+    
+    # Create Gaussian weights based on distance from center
+    offsets = torch.arange(-radius, radius + 1, device=device).float()
+    grid_h, grid_w = torch.meshgrid(offsets, offsets, indexing='ij')
+    dist_sq = (grid_h ** 2 + grid_w ** 2).reshape(-1)  # [k*k]
+    weights = torch.exp(-dist_sq / (2 * sigma ** 2))  # [k*k]
+    weights = weights / weights.sum()  # Normalize
+    
+    # Weighted mean
+    local_sim = (similarity * weights.view(1, -1, 1)).sum(dim=1)  # [B, N]
+    return local_sim
+
+
+def compute_feature_density(features_norm: torch.Tensor, k: int = 10) -> torch.Tensor:
+    """Compute feature-space density: mean similarity to k-nearest neighbors in feature space."""
+    B, N, D = features_norm.shape
+    # [B, N, N] similarity matrix
+    sim_matrix = torch.bmm(features_norm, features_norm.transpose(1, 2))
+    # Top-k similarities (excluding self which is 1.0)
+    topk_sim, _ = sim_matrix.topk(k + 1, dim=-1)  # [B, N, k+1]
+    # Exclude the first one (self-similarity = 1)
+    density = topk_sim[:, :, 1:].mean(dim=-1)  # [B, N]
+    return density
+
+
 def greedy_slot_initialization(
     features: torch.Tensor,
     n_slots: int,
@@ -240,6 +278,45 @@ def greedy_slot_initialization(
         local_bg = F.normalize(local_bg.permute(0, 2, 3, 1).reshape(B, N, D), dim=-1)
         bg_sim = (features_norm * local_bg).sum(dim=-1)
         saliency = local_sim - bg_sim
+    elif saliency_mode == "local_consistency_density":
+        # Local consistency weighted by feature-space density
+        # High density = patch is in a dense feature cluster (object interior)
+        patch_hw = int(N ** 0.5)
+        local_sim = compute_neighbor_similarity(features_norm, patch_hw, patch_hw, neighbor_radius)
+        global_mean = F.normalize(features.mean(dim=1, keepdim=True), dim=-1)
+        global_sim = (features_norm * global_mean).sum(dim=-1)
+        local_consistency = local_sim - saliency_alpha * global_sim
+        # Feature-space density
+        density = compute_feature_density(features_norm, k=10)
+        # Normalize density to [0, 1]
+        d_min, d_max = density.min(dim=-1, keepdim=True)[0], density.max(dim=-1, keepdim=True)[0]
+        density_norm = (density - d_min) / (d_max - d_min + 1e-8)
+        # Combine: local_consistency * (1 + density_norm)
+        saliency = local_consistency * (1 + density_norm)
+    elif saliency_mode == "local_consistency_second":
+        # Second-order: prefer patches whose neighbors also have high local consistency
+        patch_hw = int(N ** 0.5)
+        local_sim = compute_neighbor_similarity(features_norm, patch_hw, patch_hw, neighbor_radius)
+        global_mean = F.normalize(features.mean(dim=1, keepdim=True), dim=-1)
+        global_sim = (features_norm * global_mean).sum(dim=-1)
+        local_consistency = local_sim - saliency_alpha * global_sim  # [B, N]
+        # Second-order: average local_consistency of spatial neighbors
+        lc_spatial = local_consistency.view(B, 1, patch_hw, patch_hw)
+        kernel_size = 2 * neighbor_radius + 1
+        lc_second = F.avg_pool2d(lc_spatial, kernel_size, stride=1, padding=neighbor_radius)
+        lc_second = lc_second.view(B, N)
+        # Combine first and second order
+        saliency = 0.5 * local_consistency + 0.5 * lc_second
+    elif saliency_mode == "local_consistency_gaussian":
+        # Distance-weighted (Gaussian) local consistency
+        patch_hw = int(N ** 0.5)
+        # Use Gaussian-weighted neighbor similarity (closer neighbors matter more)
+        local_sim = compute_gaussian_neighbor_similarity(
+            features_norm, patch_hw, patch_hw, neighbor_radius, sigma=neighbor_radius / 2
+        )
+        global_mean = F.normalize(features.mean(dim=1, keepdim=True), dim=-1)
+        global_sim = (features_norm * global_mean).sum(dim=-1)
+        saliency = local_sim - saliency_alpha * global_sim
     else:
         saliency = features.norm(dim=-1)
     
@@ -284,6 +361,28 @@ def greedy_slot_initialization(
             slot = _average_with_spatial_neighbors(
                 features, idx_h, idx_w, patch_hw, neighbor_avg_radius
             )
+        elif selection_mode == "knn_refine":
+            # Select patch, then refine by averaging with k-nearest neighbors in feature space
+            idx = masked_saliency.argmax(dim=-1)  # [B]
+            selected = features[torch.arange(B, device=device), idx]  # [B, D]
+            # Find k-nearest neighbors in feature space
+            selected_norm = F.normalize(selected, dim=-1).unsqueeze(1)  # [B, 1, D]
+            sim_to_selected = (features_norm * selected_norm).sum(dim=-1)  # [B, N]
+            _, knn_indices = sim_to_selected.topk(soft_topk, dim=-1)  # [B, k]
+            knn_features = features.gather(1, knn_indices.unsqueeze(-1).expand(-1, -1, D))  # [B, k, D]
+            slot = knn_features.mean(dim=1)  # [B, D]
+        elif selection_mode == "centroid":
+            # Select patch, then compute centroid of all similar patches (soft region)
+            idx = masked_saliency.argmax(dim=-1)  # [B]
+            selected = features[torch.arange(B, device=device), idx]  # [B, D]
+            # Compute similarity to selected and use as soft weights
+            selected_norm = F.normalize(selected, dim=-1).unsqueeze(1)  # [B, 1, D]
+            sim_to_selected = (features_norm * selected_norm).sum(dim=-1)  # [B, N]
+            # Soft weights: only patches similar enough (above threshold)
+            soft_weights = (sim_to_selected * mask).clamp(min=0)  # [B, N]
+            soft_weights = soft_weights * (sim_to_selected > 0.5).float()  # Threshold
+            soft_weights = soft_weights / (soft_weights.sum(dim=-1, keepdim=True) + 1e-8)
+            slot = torch.einsum("bn,bnd->bd", soft_weights, features)  # [B, D]
         else:  # "hard" - original behavior
             idx = masked_saliency.argmax(dim=-1)  # [B]
             selected = features[torch.arange(B, device=device), idx]  # [B, D]
