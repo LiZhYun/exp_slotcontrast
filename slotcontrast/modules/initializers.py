@@ -372,8 +372,8 @@ def _compute_spatial_suppression(
     coords_h = torch.arange(patch_hw, device=device).float()
     coords_w = torch.arange(patch_hw, device=device).float()
     grid_h, grid_w = torch.meshgrid(coords_h, coords_w, indexing='ij')
-    grid_h = grid_h.view(1, N).expand(B, N)  # [B, N]
-    grid_w = grid_w.view(1, N).expand(B, N)  # [B, N]
+    grid_h = grid_h.reshape(1, N).expand(B, N)  # [B, N]
+    grid_w = grid_w.reshape(1, N).expand(B, N)  # [B, N]
     
     # Compute distance from each patch to selected patch
     dist_h = (grid_h - idx_h.float().unsqueeze(1)).abs()  # [B, N]
