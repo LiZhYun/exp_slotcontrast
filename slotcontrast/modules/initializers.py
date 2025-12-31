@@ -540,6 +540,7 @@ class GreedyFeatureInit(nn.Module):
                  selection_mode: str = "hard", soft_topk: int = 5,
                  neighbor_avg_radius: int = 1, saliency_alpha: float = 1.0,
                  spatial_suppression_radius: int = 0, spatial_suppression_strength: float = 0.5,
+                 refine_linear: bool = False,
                  **kwargs):
         super().__init__()
         self.n_slots = n_slots
@@ -558,6 +559,13 @@ class GreedyFeatureInit(nn.Module):
         self.spatial_suppression_radius = spatial_suppression_radius
         self.spatial_suppression_strength = spatial_suppression_strength
         self.fallback = nn.Parameter(torch.randn(1, n_slots, dim) * dim**-0.5)
+        
+        # Optional: learnable refinement with zero init
+        self.refine_linear = refine_linear
+        if refine_linear:
+            self.refine = nn.Linear(dim, dim)
+            nn.init.zeros_(self.refine.weight)
+            nn.init.zeros_(self.refine.bias)
 
     def forward(self, batch_size: int, features: Optional[torch.Tensor] = None) -> torch.Tensor:
         if features is None:
@@ -566,7 +574,7 @@ class GreedyFeatureInit(nn.Module):
         if features.ndim == 4:
             if self.init_mode == "first_frame":
                 first_frame_feat = features[:, 0]
-                return greedy_slot_initialization(
+                slots = greedy_slot_initialization(
                     first_frame_feat, self.n_slots, self.temperature, 
                     self.saliency_mode, self.aggregate, self.aggregate_threshold,
                     self.neighbor_radius, self.saliency_smoothing,
@@ -575,7 +583,7 @@ class GreedyFeatureInit(nn.Module):
                     self.spatial_suppression_strength
                 )
             else:
-                return greedy_slot_initialization(
+                slots = greedy_slot_initialization(
                     features, self.n_slots, self.temperature, 
                     self.saliency_mode, self.aggregate, self.aggregate_threshold,
                     self.neighbor_radius, self.saliency_smoothing,
@@ -583,15 +591,21 @@ class GreedyFeatureInit(nn.Module):
                     self.saliency_alpha, self.spatial_suppression_radius,
                     self.spatial_suppression_strength
                 )
+        else:
+            slots = greedy_slot_initialization(
+                features, self.n_slots, self.temperature, 
+                self.saliency_mode, self.aggregate, self.aggregate_threshold,
+                self.neighbor_radius, self.saliency_smoothing,
+                self.selection_mode, self.soft_topk, self.neighbor_avg_radius,
+                self.saliency_alpha, self.spatial_suppression_radius,
+                self.spatial_suppression_strength
+            )
         
-        return greedy_slot_initialization(
-            features, self.n_slots, self.temperature, 
-            self.saliency_mode, self.aggregate, self.aggregate_threshold,
-            self.neighbor_radius, self.saliency_smoothing,
-            self.selection_mode, self.soft_topk, self.neighbor_avg_radius,
-            self.saliency_alpha, self.spatial_suppression_radius,
-            self.spatial_suppression_strength
-        )
+        # Apply learnable refinement: slots = slots + refine(slots)
+        if self.refine_linear:
+            slots = slots + self.refine(slots)
+        
+        return slots
 
 
 def cluster_and_centroid(
