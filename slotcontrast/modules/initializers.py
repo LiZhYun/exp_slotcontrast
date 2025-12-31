@@ -540,7 +540,7 @@ class GreedyFeatureInit(nn.Module):
                  selection_mode: str = "hard", soft_topk: int = 5,
                  neighbor_avg_radius: int = 1, saliency_alpha: float = 1.0,
                  spatial_suppression_radius: int = 0, spatial_suppression_strength: float = 0.5,
-                 refine_linear: bool = False,
+                 refine_linear: bool = False, refine_hidden: int = 0,
                  **kwargs):
         super().__init__()
         self.n_slots = n_slots
@@ -560,12 +560,25 @@ class GreedyFeatureInit(nn.Module):
         self.spatial_suppression_strength = spatial_suppression_strength
         self.fallback = nn.Parameter(torch.randn(1, n_slots, dim) * dim**-0.5)
         
-        # Optional: learnable refinement with zero init
+        # Optional: learnable refinement with zero init on last layer
+        # refine_hidden=0: single linear, refine_hidden>0: 2-layer MLP with bottleneck
         self.refine_linear = refine_linear
         if refine_linear:
-            self.refine = nn.Linear(dim, dim)
-            nn.init.zeros_(self.refine.weight)
-            nn.init.zeros_(self.refine.bias)
+            if refine_hidden > 0:
+                # 2-layer MLP with bottleneck
+                self.refine = nn.Sequential(
+                    nn.Linear(dim, refine_hidden),
+                    nn.GELU(),
+                    nn.Linear(refine_hidden, dim),
+                )
+                # Zero init only the last layer
+                nn.init.zeros_(self.refine[-1].weight)
+                nn.init.zeros_(self.refine[-1].bias)
+            else:
+                # Single linear layer
+                self.refine = nn.Linear(dim, dim)
+                nn.init.zeros_(self.refine.weight)
+                nn.init.zeros_(self.refine.bias)
 
     def forward(self, batch_size: int, features: Optional[torch.Tensor] = None) -> torch.Tensor:
         if features is None:
