@@ -165,6 +165,7 @@ def build(
         use_cycle_consistency=use_cycle_consistency,
         temporal_cross_window=temporal_cross_window,
         temporal_cross_mode=temporal_cross_mode,
+        use_backbone_features=model_config.get("use_backbone_features", False),
     )
 
     if model_config.load_weights:
@@ -197,6 +198,7 @@ class ObjectCentricModel(pl.LightningModule):
         use_cycle_consistency: bool = False,
         temporal_cross_window: int = 0,
         temporal_cross_mode: str = "both",
+        use_backbone_features: bool = False,
     ):
         super().__init__()
         self.optimizer_builder = optimizer_builder
@@ -209,6 +211,7 @@ class ObjectCentricModel(pl.LightningModule):
         self.use_cycle_consistency = use_cycle_consistency
         self.temporal_cross_window = temporal_cross_window
         self.temporal_cross_mode = temporal_cross_mode
+        self.use_backbone_features = use_backbone_features
 
         if loss_weights is not None:
             # Filter out losses that are not used
@@ -284,7 +287,15 @@ class ObjectCentricModel(pl.LightningModule):
         encoder_output = self.encoder(encoder_input, camera_data=camera_data)
         features = encoder_output["features"]
 
-        slots_initial = self.initializer(batch_size=batch_size, features=features)
+        # Use backbone features for initialization (more stable early in training)
+        if self.use_backbone_features and "backbone_features" in encoder_output:
+            backbone_features = encoder_output["backbone_features"]
+            raw_slots = self.initializer(batch_size=batch_size, features=backbone_features)
+            # Get output_transform from encoder (handle MapOverTime wrapper for video)
+            encoder_module = getattr(self.encoder, 'module', self.encoder)
+            slots_initial = encoder_module.output_transform(raw_slots)
+        else:
+            slots_initial = self.initializer(batch_size=batch_size, features=features)
         processor_output = self.processor(slots_initial, features)
         slots = processor_output["state"]
         decoder_output = self.decoder(slots)

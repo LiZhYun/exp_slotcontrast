@@ -31,6 +31,9 @@ model:
   input_type: video
   visualize: false
   visualize_every_n_steps: 10000
+  use_backbone_features: false  # Use stable DINO features for greedy init
+  temporal_cross_window: 0  # 0=same-frame cycle, 0<=temporal cross-consistency<=chunk_size-1
+  temporal_cross_mode: "both"  # or "backward" or "forward"
   losses:
     loss_featrec:
       name: MSELoss
