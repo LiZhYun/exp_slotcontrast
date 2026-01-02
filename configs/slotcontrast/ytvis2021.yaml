@@ -62,7 +62,7 @@ model:
 
 
   initializer:
-    name: FixedLearnedInit # FixedLearnedInit or GreedyFeatureInit or ClusterFeatureInit
+    name: FixedLearnedInit # FixedLearnedInit, GreedyFeatureInit, GreedyFeatureInitV2, ClusterFeatureInit
     n_slots: ${globals.NUM_SLOTS}
     dim: ${globals.SLOT_DIM}
     saliency_mode: norm  # 'norm', 'entropy', 'variance', 'pca', 'local_consistency', 'local_consistency_pca', 'local_consistency_ms', 'local_consistency_uniform', 'local_consistency_centroid', 'local_consistency_balanced', 'local_consistency_soft', 'local_consistency_density', 'local_consistency_second', 'local_consistency_gaussian'
@@ -80,6 +80,10 @@ model:
     init_mode: first_frame  # per_frame or first_frame
     aggregate: false           # Enable patch aggregation
     aggregate_threshold: 0.5  # Include patches with sim > 0.5
+    # === V2-specific: Variable slot support ===
+    init_threshold: 0.0        # Early stopping threshold (0=disabled, try 0.1-0.3)
+    min_slots: 1               # Minimum slots before early stopping applies
+    # === Clustering (ClusterFeatureInit only) ===
     cluster_method: agglomerative
     affinity: cosine
     linkage: average
@@ -155,13 +159,18 @@ model:
 
   predictor:
     # Standard predictor (no memory)
-    name: networks.TransformerEncoder # networks.TransformerEncoder or networks.CrossAttentionPredictor or networks.HungarianPredictor
+    name: networks.TransformerEncoder # networks.TransformerEncoder, networks.HungarianPredictor, networks.HungarianMemoryMatcher
     dim: ${globals.SLOT_DIM}
     n_blocks: 1
     n_heads: 4
     use_gated: false
-    similarity: cosine  # 'cosine' or 'l2'
-    pre_match: false  # Match greedy init BEFORE slot attention (recommended with per_frame init) or greedy
+    # === HungarianPredictor / HungarianMemoryMatcher options ===
+    similarity: cosine         # 'cosine' or 'l2'
+    pre_match: false           # Match BEFORE slot attention (HungarianPredictor only)
+    # === HungarianMemoryMatcher V2 options (persistent tracking) ===
+    max_slots: ${globals.NUM_SLOTS}  # Fixed registry capacity
+    match_threshold: 0.3       # Cosine distance threshold for valid match (lower=stricter)
+    ema_decay: 0.9             # EMA weight: new = decay*old + (1-decay)*current
     
     # ============== MEMORY-CONDITIONED PREDICTOR (Optional) ==============
     # Uncomment to use memory-conditioned predictor with cross-attention

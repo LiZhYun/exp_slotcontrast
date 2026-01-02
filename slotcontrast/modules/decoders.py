@@ -64,7 +64,24 @@ class MLPDecoder(nn.Module):
         if frozen:
             self.pos_emb.requires_grad = False
 
-    def forward(self, slots: torch.Tensor) -> Dict[str, torch.Tensor]:
+    def forward(self, slots: torch.Tensor, existence_mask: Optional[torch.Tensor] = None) -> Dict[str, torch.Tensor]:
+        """
+        Args:
+            slots: [B, n_slots, D] or [B, T, n_slots, D] for video
+            existence_mask: [B, n_slots] or [B, T, n_slots] - 1 for valid slots, 0 for empty
+        """
+        # Handle video input [B, T, n_slots, D]
+        if slots.ndim == 4:
+            B, T, n_slots, D = slots.shape
+            results = []
+            for t in range(T):
+                mask_t = existence_mask[:, t] if existence_mask is not None else None
+                results.append(self.forward(slots[:, t], mask_t))
+            return {
+                "reconstruction": torch.stack([r["reconstruction"] for r in results], dim=1),
+                "masks": torch.stack([r["masks"] for r in results], dim=1),
+            }
+        
         bs, n_slots, dims = slots.shape
 
         if not self.training and self.eval_output_size is not None:
@@ -80,6 +97,12 @@ class MLPDecoder(nn.Module):
         slots = slots + pos_emb
 
         recons, alpha = self.mlp(slots).split((self.outp_dim, 1), dim=-1)
+
+        # Apply existence mask: set non-existent slots to -inf before softmax
+        if existence_mask is not None:
+            # existence_mask: [B, n_slots] -> [B, n_slots, 1, 1]
+            mask = existence_mask.view(bs, n_slots, 1, 1)
+            alpha = alpha.masked_fill(mask == 0, float('-inf'))
 
         masks = torch.softmax(alpha, dim=1)
         recon = torch.sum(recons * masks, dim=1)

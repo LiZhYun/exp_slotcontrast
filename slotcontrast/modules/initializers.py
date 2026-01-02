@@ -776,3 +776,279 @@ class ClusterFeatureInit(nn.Module):
             features, self.n_slots,
             self.cluster_method, self.affinity, self.linkage
         )
+
+
+def compute_saliency(
+    features: torch.Tensor,
+    features_norm: torch.Tensor,
+    n_slots: int,
+    saliency_mode: str,
+    neighbor_radius: int = 1,
+    saliency_alpha: float = 1.0,
+    saliency_smoothing: int = 0,
+    temperature: float = 0.1,
+) -> torch.Tensor:
+    """Compute saliency scores for greedy slot selection.
+    
+    Args:
+        features: [B, N, D] input features
+        features_norm: [B, N, D] L2-normalized features
+        n_slots: number of slots (used for PCA modes)
+        saliency_mode: saliency computation method
+        neighbor_radius: radius for local consistency modes
+        saliency_alpha: weight for global similarity penalty
+        saliency_smoothing: spatial smoothing kernel radius (0=disabled)
+        temperature: temperature for entropy mode
+    
+    Returns:
+        saliency: [B, N] saliency scores
+    """
+    B, N, D = features.shape
+    device = features.device
+    patch_hw = int(N ** 0.5)
+    
+    if saliency_mode == "norm":
+        saliency = features.norm(dim=-1)
+    elif saliency_mode == "entropy":
+        sim = torch.bmm(features_norm, features_norm.transpose(1, 2)) / temperature
+        attn = F.softmax(sim, dim=-1)
+        entropy = -(attn * (attn + 1e-8).log()).sum(dim=-1)
+        saliency = -entropy
+    elif saliency_mode == "variance":
+        mean_feat = features.mean(dim=1, keepdim=True)
+        saliency = (features - mean_feat).norm(dim=-1)
+    elif saliency_mode == "pca":
+        mean_feat = features.mean(dim=1, keepdim=True)
+        centered = features - mean_feat
+        cov = torch.bmm(centered.transpose(1, 2), centered) / (N - 1)
+        k = min(n_slots, D // 4, 32)
+        _, eigenvectors = torch.linalg.eigh(cov)
+        top_vecs = eigenvectors[:, :, -k:]
+        saliency = torch.bmm(centered, top_vecs).norm(dim=-1)
+    elif saliency_mode == "local_consistency":
+        local_sim = compute_neighbor_similarity(features_norm, patch_hw, patch_hw, neighbor_radius)
+        global_mean = F.normalize(features.mean(dim=1, keepdim=True), dim=-1)
+        global_sim = (features_norm * global_mean).sum(dim=-1)
+        saliency = local_sim - saliency_alpha * global_sim
+    elif saliency_mode == "local_consistency_pca":
+        local_sim = compute_neighbor_similarity(features_norm, patch_hw, patch_hw, neighbor_radius)
+        global_mean = F.normalize(features.mean(dim=1, keepdim=True), dim=-1)
+        global_sim = (features_norm * global_mean).sum(dim=-1)
+        local_consistency = local_sim - global_sim
+        mean_feat = features.mean(dim=1, keepdim=True)
+        centered = features - mean_feat
+        cov = torch.bmm(centered.transpose(1, 2), centered) / (N - 1)
+        k = min(n_slots, D // 4, 32)
+        _, eigenvectors = torch.linalg.eigh(cov)
+        top_vecs = eigenvectors[:, :, -k:]
+        pca_score = torch.bmm(centered, top_vecs).norm(dim=-1)
+        pca_min, pca_max = pca_score.min(dim=-1, keepdim=True)[0], pca_score.max(dim=-1, keepdim=True)[0]
+        pca_normalized = (pca_score - pca_min) / (pca_max - pca_min + 1e-8)
+        saliency = local_consistency * (1 + pca_normalized)
+    elif saliency_mode == "local_consistency_ms":
+        local_sim_r1 = compute_neighbor_similarity(features_norm, patch_hw, patch_hw, radius=1)
+        local_sim_r2 = compute_neighbor_similarity(features_norm, patch_hw, patch_hw, radius=2)
+        global_mean = F.normalize(features.mean(dim=1, keepdim=True), dim=-1)
+        global_sim = (features_norm * global_mean).sum(dim=-1)
+        saliency = (local_sim_r1 + local_sim_r2) / 2 - global_sim
+    elif saliency_mode == "local_consistency_density":
+        local_sim = compute_neighbor_similarity(features_norm, patch_hw, patch_hw, neighbor_radius)
+        global_mean = F.normalize(features.mean(dim=1, keepdim=True), dim=-1)
+        global_sim = (features_norm * global_mean).sum(dim=-1)
+        local_consistency = local_sim - saliency_alpha * global_sim
+        density = compute_feature_density(features_norm, k=10)
+        d_min, d_max = density.min(dim=-1, keepdim=True)[0], density.max(dim=-1, keepdim=True)[0]
+        density_norm = (density - d_min) / (d_max - d_min + 1e-8)
+        saliency = local_consistency * (1 + density_norm)
+    elif saliency_mode == "local_consistency_gaussian":
+        local_sim = compute_gaussian_neighbor_similarity(
+            features_norm, patch_hw, patch_hw, neighbor_radius, sigma=max(1, neighbor_radius / 2)
+        )
+        global_mean = F.normalize(features.mean(dim=1, keepdim=True), dim=-1)
+        global_sim = (features_norm * global_mean).sum(dim=-1)
+        saliency = local_sim - saliency_alpha * global_sim
+    else:  # fallback to norm
+        saliency = features.norm(dim=-1)
+    
+    # Optional spatial smoothing
+    if saliency_smoothing > 0:
+        saliency_spatial = saliency.view(B, 1, patch_hw, patch_hw)
+        kernel_size = 2 * saliency_smoothing + 1
+        saliency = F.avg_pool2d(saliency_spatial, kernel_size, stride=1, padding=saliency_smoothing).view(B, N)
+    
+    return saliency
+
+
+class GreedyFeatureInitV2(nn.Module):
+    """Variable slot initialization with early stopping.
+    
+    Extends V1 with:
+    - Returns (slots, n_objects, existence_mask) tuple
+    - init_threshold for early stopping when max activation < threshold
+    - Supports all V1 saliency modes and selection modes
+    - Uses V1's soft multiplicative suppression (no extra hyperparameters)
+    """
+    
+    def __init__(
+        self,
+        n_slots: int,  # max_slots
+        dim: int,
+        # === All V1 parameters ===
+        temperature: float = 0.1,
+        saliency_mode: str = "local_consistency",
+        init_mode: str = "per_frame",
+        aggregate: bool = False,
+        aggregate_threshold: float = 0.5,
+        neighbor_radius: int = 1,
+        saliency_smoothing: int = 0,
+        selection_mode: str = "hard",
+        soft_topk: int = 5,
+        neighbor_avg_radius: int = 1,
+        saliency_alpha: float = 1.0,
+        spatial_suppression_radius: int = 0,
+        spatial_suppression_strength: float = 0.5,
+        # === V2-specific parameters ===
+        init_threshold: float = 0.0,  # Early stopping threshold (0=disabled)
+        min_slots: int = 1,
+        **kwargs,
+    ):
+        super().__init__()
+        self.n_slots = n_slots
+        self.dim = dim
+        self.temperature = temperature
+        self.saliency_mode = saliency_mode
+        self.init_mode = init_mode
+        self.aggregate = aggregate
+        self.aggregate_threshold = aggregate_threshold
+        self.neighbor_radius = neighbor_radius
+        self.saliency_smoothing = saliency_smoothing
+        self.selection_mode = selection_mode
+        self.soft_topk = soft_topk
+        self.neighbor_avg_radius = neighbor_avg_radius
+        self.saliency_alpha = saliency_alpha
+        self.spatial_suppression_radius = spatial_suppression_radius
+        self.spatial_suppression_strength = spatial_suppression_strength
+        # V2 specific
+        self.init_threshold = init_threshold
+        self.min_slots = min_slots
+        # Fallback for when no features provided
+        self.fallback = nn.Parameter(torch.randn(1, n_slots, dim) * dim**-0.5)
+    
+    def _greedy_init_variable(self, features: torch.Tensor) -> tuple:
+        """Greedy init with explicit masking and early stopping."""
+        B, N, D = features.shape
+        device = features.device
+        patch_hw = int(N ** 0.5)
+        
+        # Initialize outputs
+        slots = torch.zeros(B, self.n_slots, D, device=device)
+        existence_mask = torch.zeros(B, self.n_slots, device=device)
+        n_objects = torch.zeros(B, dtype=torch.long, device=device)
+        
+        # Precompute
+        features_norm = F.normalize(features, dim=-1)
+        base_saliency = compute_saliency(
+            features, features_norm, self.n_slots, self.saliency_mode,
+            self.neighbor_radius, self.saliency_alpha, self.saliency_smoothing, self.temperature
+        )
+        
+        # Soft suppression mask (multiplicative, like V1)
+        suppression_mask = torch.ones(B, N, device=device)
+        active_samples = torch.ones(B, device=device, dtype=torch.bool)
+        
+        for slot_idx in range(self.n_slots):
+            # Apply soft suppression
+            masked_saliency = base_saliency * suppression_mask
+            
+            # Find max activation
+            max_saliency, max_idx = masked_saliency.max(dim=-1)
+            
+            # Early stopping (per-sample)
+            if self.init_threshold > 0 and slot_idx >= self.min_slots:
+                should_stop = max_saliency < self.init_threshold
+                active_samples = active_samples & ~should_stop
+                if not active_samples.any():
+                    break
+            
+            # Extract features at peak locations
+            batch_idx = torch.arange(B, device=device)
+            selected = features[batch_idx, max_idx]
+            
+            # Apply selection mode refinement
+            if self.selection_mode == "soft":
+                topk_vals, topk_idx = masked_saliency.topk(self.soft_topk, dim=-1)
+                topk_weights = F.softmax(topk_vals / self.temperature, dim=-1)
+                topk_feats = features.gather(1, topk_idx.unsqueeze(-1).expand(-1, -1, D))
+                slot = (topk_weights.unsqueeze(-1) * topk_feats).sum(dim=1)
+            elif self.selection_mode == "neighbor_avg":
+                idx_h, idx_w = max_idx // patch_hw, max_idx % patch_hw
+                slot = _average_with_spatial_neighbors(features, idx_h, idx_w, patch_hw, self.neighbor_avg_radius)
+            elif self.selection_mode == "knn_refine":
+                selected_norm = F.normalize(selected, dim=-1).unsqueeze(1)
+                sim = (features_norm * selected_norm).sum(dim=-1)
+                _, knn_idx = sim.topk(self.soft_topk, dim=-1)
+                knn_feats = features.gather(1, knn_idx.unsqueeze(-1).expand(-1, -1, D))
+                slot = knn_feats.mean(dim=1)
+            elif self.selection_mode == "centroid":
+                selected_norm = F.normalize(selected, dim=-1).unsqueeze(1)
+                sim = (features_norm * selected_norm).sum(dim=-1)
+                weights = (sim * (suppression_mask > 0.5).float()).clamp(min=0) * (sim > 0.5).float()
+                weights = weights / (weights.sum(dim=-1, keepdim=True) + 1e-8)
+                slot = torch.einsum("bn,bnd->bd", weights, features)
+            else:  # hard
+                slot = selected
+            
+            # Aggregate if enabled
+            if self.aggregate:
+                selected_norm = F.normalize(selected, dim=-1).unsqueeze(1)
+                sim = (features_norm * selected_norm).sum(dim=-1)
+                agg_weights = (sim * (suppression_mask > 0.5).float()).clamp(min=0) * (sim > self.aggregate_threshold).float()
+                agg_weights = agg_weights / (agg_weights.sum(dim=-1, keepdim=True) + 1e-8)
+                slot = torch.einsum("bn,bnd->bd", agg_weights, features)
+            
+            # Store for active samples
+            slots[active_samples, slot_idx] = slot[active_samples]
+            existence_mask[active_samples, slot_idx] = 1.0
+            n_objects[active_samples] += 1
+            
+            # Soft suppression (same as V1): suppress similar features multiplicatively
+            selected_norm = F.normalize(selected, dim=-1).unsqueeze(1)
+            similarity = (features_norm * selected_norm).sum(dim=-1)
+            feature_suppression = 1 - similarity.clamp(0, 1)
+            
+            # Optional spatial suppression
+            if self.spatial_suppression_radius > 0:
+                idx_h, idx_w = max_idx // patch_hw, max_idx % patch_hw
+                spatial_supp = _compute_spatial_suppression(idx_h, idx_w, patch_hw, self.spatial_suppression_radius, device)
+                # Blend feature and spatial suppression
+                suppression = (1 - self.spatial_suppression_strength) * feature_suppression + \
+                              self.spatial_suppression_strength * spatial_supp
+            else:
+                suppression = feature_suppression
+            
+            suppression_mask = suppression_mask * suppression
+        
+        # Empty slots stay as zeros - existence_mask tells downstream to ignore them
+        
+        return slots, n_objects.clamp(min=self.min_slots), existence_mask
+    
+    def forward(self, batch_size: int, features: Optional[torch.Tensor] = None):
+        """Returns: (slots, n_objects, existence_mask)"""
+        if features is None:
+            mask = torch.ones(batch_size, self.n_slots, device=self.fallback.device)
+            return self.fallback.expand(batch_size, -1, -1), torch.full((batch_size,), self.n_slots, dtype=torch.long), mask
+        
+        if features.ndim == 4:  # Video [B, T, N, D]
+            if self.init_mode == "first_frame":
+                return self._greedy_init_variable(features[:, 0])
+            else:  # per_frame
+                B, T = features.shape[:2]
+                all_slots, all_counts, all_masks = [], [], []
+                for t in range(T):
+                    s, n, m = self._greedy_init_variable(features[:, t])
+                    all_slots.append(s)
+                    all_counts.append(n)
+                    all_masks.append(m)
+                return torch.stack(all_slots, dim=1), torch.stack(all_counts, dim=1), torch.stack(all_masks, dim=1)
+        
+        return self._greedy_init_variable(features)

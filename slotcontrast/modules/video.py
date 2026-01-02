@@ -45,7 +45,7 @@ class LatentProcessor(nn.Module):
 
     def forward(
         self, state: torch.Tensor, inputs: Optional[torch.Tensor], time_step: Optional[int] = None,
-        init_state: Optional[torch.Tensor] = None
+        init_state: Optional[torch.Tensor] = None, existence_mask: Optional[torch.Tensor] = None
     ) -> Dict[str, torch.Tensor]:
         # state: batch x n_slots x slot_dim
         assert state.ndim == 3
@@ -102,6 +102,7 @@ class LatentProcessor(nn.Module):
 
         # 4. PREDICT: Generate initialization for NEXT frame
         attn_list = None
+        out_existence_mask = existence_mask  # Default: pass through
         if self.predictor and not self.skip_predictor:
             use_memory = (
                 hasattr(self.predictor, "use_memory")
@@ -112,11 +113,17 @@ class LatentProcessor(nn.Module):
             use_init_state = hasattr(self.predictor, 'cross_attn') and init_state is not None
             # Check if predictor is HungarianPredictor (matching-based)
             is_hungarian = hasattr(self.predictor, '_hungarian_match')
+            # Check if predictor is HungarianMemoryMatcher (has registry)
+            is_memory_matcher = hasattr(self.predictor, 'registry_features')
             
             if use_memory:
                 result = self.predictor(
                     updated_state, memory, memory_pos, return_weights=self.use_ttt3r
                 )
+            elif is_memory_matcher and existence_mask is not None:
+                # HungarianMemoryMatcher with variable slots
+                result = self.predictor(updated_state, existence_mask=existence_mask, return_weights=True)
+                predicted_state, out_existence_mask = result[0], result[1]
             elif use_init_state:
                 result = self.predictor(
                     updated_state, init_state=init_state, return_weights=self.use_ttt3r
@@ -127,11 +134,12 @@ class LatentProcessor(nn.Module):
             else:
                 result = self.predictor(updated_state, return_weights=self.use_ttt3r)
             
-            # Parse result based on return_weights
-            if self.use_ttt3r and isinstance(result, tuple):
-                predicted_state, attn_list = result[0], result[-1]
-            else:
-                predicted_state = result if not isinstance(result, tuple) else result[0]
+            # Parse result based on return_weights (skip if already handled by memory matcher)
+            if not (is_memory_matcher and existence_mask is not None):
+                if self.use_ttt3r and isinstance(result, tuple):
+                    predicted_state, attn_list = result[0], result[-1]
+                else:
+                    predicted_state = result if not isinstance(result, tuple) else result[0]
             
             # TTT3R: Adaptive update based on attention
             if self.use_ttt3r and time_step is not None and time_step > 0 and attn_list is not None:
@@ -156,6 +164,10 @@ class LatentProcessor(nn.Module):
             "corrector": corrector_output,
             "initial_queries": state,  # Store for cycle consistency
         }
+        
+        # Add existence mask if available (from memory matcher)
+        if out_existence_mask is not None:
+            result["existence_mask"] = out_existence_mask
 
         # Predictor analysis: measure if predictor is ~identity
         if self.predictor and not self.skip_predictor:
@@ -273,20 +285,27 @@ class ScanOverTime(nn.Module):
         self.next_state_key = next_state_key
         self.pass_step = pass_step
 
-    def forward(self, initial_state: torch.Tensor, inputs: torch.Tensor):
+    def forward(self, initial_state: torch.Tensor, inputs: torch.Tensor, 
+                existence_mask: Optional[torch.Tensor] = None):
         # initial_state: [B, n_slots, D] or [B, T, n_slots, D] for per-frame init
         # inputs: batch x n_frames x ...
+        # existence_mask: [B, n_slots] or [B, T, n_slots] for variable slots
         seq_len = inputs.shape[1]
         per_frame_init = initial_state.ndim == 4  # [B, T, n_slots, D]
+        per_frame_mask = existence_mask is not None and existence_mask.ndim == 3  # [B, T, n_slots]
 
         # Clear memory bank at start of sequence
         if hasattr(self.module, "memory_bank") and self.module.memory_bank is not None:
             self.module.memory_bank.clear()
         
-        # Reset HungarianPredictor state at start of sequence
+        # Reset predictor state at start of sequence
         is_hungarian = (
             hasattr(self.module, "predictor") 
             and hasattr(self.module.predictor, "_hungarian_match")
+        )
+        is_memory_matcher = (
+            hasattr(self.module, "predictor")
+            and hasattr(self.module.predictor, "registry_features")
         )
         if hasattr(self.module, "predictor") and hasattr(self.module.predictor, "reset"):
             self.module.predictor.reset()
@@ -294,8 +313,9 @@ class ScanOverTime(nn.Module):
         # Check if pre-matching mode is enabled (True or "greedy")
         use_pre_match = (
             is_hungarian
+            and not is_memory_matcher  # Memory matcher handles alignment internally
             and hasattr(self.module.predictor, "pre_match")
-            and self.module.predictor.pre_match  # True or "greedy" are both truthy
+            and self.module.predictor.pre_match
         )
 
         state = initial_state[:, 0] if per_frame_init else initial_state
@@ -303,9 +323,15 @@ class ScanOverTime(nn.Module):
         match_indices_list = [] if is_hungarian else None
         
         for t in range(seq_len):
-            # For per-frame init with Hungarian
+            # Get existence mask for this frame
+            mask_t = existence_mask[:, t] if per_frame_mask else existence_mask
+            
+            # For per-frame init with Hungarian (not memory matcher)
             if per_frame_init and t > 0:
-                if use_pre_match:
+                if is_memory_matcher:
+                    # Memory matcher handles alignment internally
+                    state = initial_state[:, t]
+                elif use_pre_match:
                     # Pre-match: align greedy init to reference BEFORE slot attention
                     state = self.module.predictor.match_to_reference(initial_state[:, t])
                 else:
@@ -314,14 +340,14 @@ class ScanOverTime(nn.Module):
             
             init_state_t = initial_state[:, t] if per_frame_init else None
             if self.pass_step:
-                output = self.module(state, inputs[:, t], t, init_state=init_state_t)
+                output = self.module(state, inputs[:, t], t, init_state=init_state_t, existence_mask=mask_t)
             else:
-                output = self.module(state, inputs[:, t], init_state=init_state_t)
+                output = self.module(state, inputs[:, t], init_state=init_state_t, existence_mask=mask_t)
             outputs.append(output)
             state = output[self.next_state_key]
             
             # Collect Hungarian match indices
-            if is_hungarian:
+            if is_hungarian and not is_memory_matcher:
                 indices = self.module.predictor.get_last_match_indices()
                 match_indices_list.append(indices)
 

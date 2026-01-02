@@ -290,15 +290,32 @@ class ObjectCentricModel(pl.LightningModule):
         # Use backbone features for initialization (more stable early in training)
         if self.use_backbone_features and "backbone_features" in encoder_output:
             backbone_features = encoder_output["backbone_features"]
-            raw_slots = self.initializer(batch_size=batch_size, features=backbone_features)
+            init_output = self.initializer(batch_size=batch_size, features=backbone_features)
             # Get output_transform from encoder (handle MapOverTime wrapper for video)
             encoder_module = getattr(self.encoder, 'module', self.encoder)
-            slots_initial = encoder_module.output_transform(raw_slots)
+            # Handle both single tensor and tuple output from initializer
+            if isinstance(init_output, tuple):
+                raw_slots, n_objects, existence_mask = init_output
+                slots_initial = encoder_module.output_transform(raw_slots)
+            else:
+                slots_initial = encoder_module.output_transform(init_output)
+                n_objects, existence_mask = None, None
         else:
-            slots_initial = self.initializer(batch_size=batch_size, features=features)
-        processor_output = self.processor(slots_initial, features)
+            init_output = self.initializer(batch_size=batch_size, features=features)
+            # Handle both single tensor and tuple output from initializer
+            if isinstance(init_output, tuple):
+                slots_initial, n_objects, existence_mask = init_output
+            else:
+                slots_initial = init_output
+                n_objects, existence_mask = None, None
+        
+        # Pass existence_mask through processor for variable slot support
+        processor_output = self.processor(slots_initial, features, existence_mask=existence_mask)
         slots = processor_output["state"]
-        decoder_output = self.decoder(slots)
+        
+        # Use processor output existence_mask if available (from memory matcher)
+        out_existence_mask = processor_output.get("existence_mask", existence_mask)
+        decoder_output = self.decoder(slots, existence_mask=out_existence_mask)
 
         outputs = {
             "batch_size": batch_size,
@@ -306,6 +323,12 @@ class ObjectCentricModel(pl.LightningModule):
             "processor": processor_output,
             "decoder": decoder_output,
         }
+        
+        # Add variable slot info if available (from GreedyFeatureInitV2)
+        if n_objects is not None:
+            outputs["n_objects"] = n_objects
+        if out_existence_mask is not None:
+            outputs["existence_mask"] = out_existence_mask
 
         # Cycle/Temporal Cross-Consistency: Re-slot the reconstructed features
         # When window=0, this is same-frame cycle consistency
