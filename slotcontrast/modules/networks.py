@@ -1536,7 +1536,11 @@ class HungarianMemoryMatcher(nn.Module):
         return reordered
     
     def _match_and_update(self, candidates: torch.Tensor) -> tuple:
-        """Match candidates to registry and update with three-case logic."""
+        """Match candidates to registry and reorder by global ID.
+        
+        Key insight: Registry is ONLY for ID tracking. We return the original
+        candidates reordered to match registry positions, preserving gradients.
+        """
         from scipy.optimize import linear_sum_assignment
         device = candidates.device
         n_candidates = candidates.shape[0]
@@ -1544,67 +1548,67 @@ class HungarianMemoryMatcher(nn.Module):
         occupied_idx = self.registry_occupied.nonzero(as_tuple=True)[0]
         n_occupied = len(occupied_idx)
         
-        out_slots = self.registry_features.clone()
-        out_mask = self.registry_occupied.float().clone()
-        candidate_assignments = torch.full((n_candidates,), -1, dtype=torch.long, device=device)
+        # Output: reordered current slots (with gradients) + mask
+        out_slots = torch.zeros(self.max_slots, candidates.shape[-1], device=device)
+        out_mask = torch.zeros(self.max_slots, device=device)
         
         if n_occupied == 0:
-            # First frame: register all candidates
+            # First frame: register all candidates, assign to slots 0..n-1
             n_new = min(n_candidates, self.max_slots)
             for i in range(n_new):
-                self.registry_features[i] = candidates[i]
+                self.registry_features[i] = candidates[i].detach()  # Registry stores detached
                 self.registry_occupied[i] = True
-                out_slots[i] = candidates[i]
+                out_slots[i] = candidates[i]  # Output has gradients
                 out_mask[i] = 1.0
-                candidate_assignments[i] = i
             self.n_registered = torch.tensor(n_new, device=device, dtype=torch.long)
-            return out_slots, out_mask, candidate_assignments
+            return out_slots, out_mask
         
-        # Compute cost matrix (cosine distance)
-        cand_norm = F.normalize(candidates, dim=-1)
+        # Compute cost matrix: candidates vs occupied registry slots
+        cand_norm = F.normalize(candidates.detach(), dim=-1)  # Detach for matching only
         reg_norm = F.normalize(self.registry_features[occupied_idx], dim=-1)
         cost_matrix = 1 - (cand_norm @ reg_norm.t())
         
         # Hungarian assignment
-        row_ind, col_ind = linear_sum_assignment(cost_matrix.detach().cpu().numpy())
+        row_ind, col_ind = linear_sum_assignment(cost_matrix.cpu().numpy())
         
-        matched_registry, matched_candidates = set(), set()
+        matched_registry = set()
+        matched_candidates = set()
         
         for cand_idx, occ_idx in zip(row_ind, col_ind):
             cost = cost_matrix[cand_idx, occ_idx].item()
             reg_idx = occupied_idx[occ_idx].item()
             
             if cost <= self.match_threshold:
-                # CASE 1: Valid match - EMA update
+                # MATCHED: Put current candidate at registry position (keeps gradient!)
                 matched_registry.add(reg_idx)
                 matched_candidates.add(cand_idx)
-                candidate_assignments[cand_idx] = reg_idx
+                out_slots[reg_idx] = candidates[cand_idx]  # Original with gradients
+                out_mask[reg_idx] = 1.0
+                # Update registry for future matching (detached)
                 self.registry_features[reg_idx] = (
                     self.ema_decay * self.registry_features[reg_idx] +
-                    (1 - self.ema_decay) * candidates[cand_idx]
+                    (1 - self.ema_decay) * candidates[cand_idx].detach()
                 )
-                out_slots[reg_idx] = self.registry_features[reg_idx]
-                out_mask[reg_idx] = 1.0
         
-        # CASE 2: Unmatched candidates - register as new
+        # UNMATCHED candidates: assign to new registry slots
         for cand_idx in range(n_candidates):
             if cand_idx not in matched_candidates:
                 empty_slots = (~self.registry_occupied).nonzero(as_tuple=True)[0]
                 if len(empty_slots) > 0:
                     new_idx = empty_slots[0].item()
-                    self.registry_features[new_idx] = candidates[cand_idx]
+                    self.registry_features[new_idx] = candidates[cand_idx].detach()
                     self.registry_occupied[new_idx] = True
-                    out_slots[new_idx] = candidates[cand_idx]
+                    out_slots[new_idx] = candidates[cand_idx]  # Original with gradients
                     out_mask[new_idx] = 1.0
-                    candidate_assignments[cand_idx] = new_idx
                     self.n_registered += 1
         
-        # CASE 3: Occluded registry slots - retain existing (already in out_slots)
+        # OCCLUDED: registry slots not matched this frame
+        # Keep mask=0 (empty for this frame), registry retains features for future
         for idx in occupied_idx:
             if idx.item() not in matched_registry:
-                out_mask[idx] = 0.5  # Mark as occluded but keep feature
+                out_mask[idx] = 0.0  # Not visible this frame
         
-        return out_slots, out_mask, candidate_assignments
+        return out_slots, out_mask
     
     def forward(
         self,
@@ -1651,11 +1655,10 @@ class HungarianMemoryMatcher(nn.Module):
             valid_slots = slots[b, valid_mask]
             
             if valid_slots.shape[0] == 0:
-                out_slots[b] = self.registry_features
-                out_mask[b] = self.registry_occupied.float()
+                # No valid slots: return zeros with empty mask
                 continue
             
-            out_slots[b], out_mask[b], _ = self._match_and_update(valid_slots)
+            out_slots[b], out_mask[b] = self._match_and_update(valid_slots)
         
         if return_weights:
             return out_slots, out_mask, None
