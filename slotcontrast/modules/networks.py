@@ -1564,9 +1564,10 @@ class HungarianMemoryMatcher(nn.Module):
             return out_slots, out_mask
         
         # Compute cost matrix: candidates vs occupied registry slots
-        cand_norm = F.normalize(candidates.detach(), dim=-1)  # Detach for matching only
-        reg_norm = F.normalize(self.registry_features[occupied_idx], dim=-1)
+        cand_norm = F.normalize(candidates.detach(), dim=-1, eps=1e-8)
+        reg_norm = F.normalize(self.registry_features[occupied_idx], dim=-1, eps=1e-8)
         cost_matrix = 1 - (cand_norm @ reg_norm.t())
+        cost_matrix = torch.nan_to_num(cost_matrix, nan=1.0)  # NaN → max cost
         
         # Hungarian assignment
         row_ind, col_ind = linear_sum_assignment(cost_matrix.cpu().numpy())
