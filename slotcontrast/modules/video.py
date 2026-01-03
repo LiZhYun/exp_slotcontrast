@@ -128,6 +128,10 @@ class LatentProcessor(nn.Module):
                 result = self.predictor(
                     updated_state, init_state=init_state, return_weights=self.use_ttt3r
                 )
+            elif is_hungarian and existence_mask is not None:
+                # HungarianPredictor with existence_mask: reorder both slots and mask
+                result = self.predictor(updated_state, existence_mask=existence_mask, return_weights=True)
+                predicted_state, out_existence_mask = result[0], result[1]
             elif is_hungarian:
                 # HungarianPredictor uses internal state, just pass slots
                 result = self.predictor(updated_state, return_weights=self.use_ttt3r)

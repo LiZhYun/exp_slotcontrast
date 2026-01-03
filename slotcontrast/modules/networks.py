@@ -1370,19 +1370,24 @@ class HungarianPredictor(nn.Module):
         self,
         slots: torch.Tensor,
         prev_slots: Optional[torch.Tensor] = None,
+        existence_mask: Optional[torch.Tensor] = None,
         return_weights: bool = False,
     ) -> torch.Tensor:
         """
         Args:
             slots: Current frame slots [B, N, D]
             prev_slots: Previous frame slots [B, N, D] (optional, uses internal state if None)
+            existence_mask: [B, N] which slots are valid (will be reordered along with slots)
             return_weights: Whether to return matching weights (for interface compatibility)
         
         Returns:
             Reordered slots to match previous frame's slot ordering [B, N, D]
+            If existence_mask provided: (reordered_slots, reordered_mask, None)
         """
         if self.pre_match == "greedy":
             # Greedy mode: matching done in match_to_reference, just pass through
+            if existence_mask is not None:
+                return slots, existence_mask, None
             if return_weights:
                 return slots, None
             return slots
@@ -1390,6 +1395,8 @@ class HungarianPredictor(nn.Module):
         if self.pre_match:
             # Pre-match mode: matching was done before slot attention, update slot reference
             self._prev_slots = slots.detach()
+            if existence_mask is not None:
+                return slots, existence_mask, None
             if return_weights:
                 return slots, None
             return slots
@@ -1400,6 +1407,8 @@ class HungarianPredictor(nn.Module):
         if reference_slots is None:
             self._prev_slots = slots.detach()
             self._last_match_indices = None
+            if existence_mask is not None:
+                return slots, existence_mask, None
             if return_weights:
                 return slots, None
             return slots
@@ -1407,6 +1416,12 @@ class HungarianPredictor(nn.Module):
         reordered_slots, indices = self._hungarian_match(reference_slots, slots, return_indices=True)
         self._prev_slots = reordered_slots.detach()
         self._last_match_indices = indices
+        
+        # Reorder existence_mask if provided
+        if existence_mask is not None:
+            B = slots.shape[0]
+            reordered_mask = torch.stack([existence_mask[b, indices[b]] for b in range(B)], dim=0)
+            return reordered_slots, reordered_mask, None
         
         if return_weights:
             return reordered_slots, None
