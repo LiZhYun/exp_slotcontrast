@@ -1486,6 +1486,9 @@ class HungarianMemoryMatcher(nn.Module):
     3. OCCLUDED registry: Retain existing feature unchanged
     
     Compatible with HungarianPredictor V1 interface.
+    
+    Note: Registry is per-batch-element. Each batch element (independent video)
+    maintains its own registry across time steps within a video chunk.
     """
     
     def __init__(
@@ -1506,22 +1509,29 @@ class HungarianMemoryMatcher(nn.Module):
         self.similarity = similarity
         self.pre_match = pre_match
         
-        # Fixed-capacity registry (NEVER resize or delete)
-        self.register_buffer('registry_features', torch.zeros(max_slots, dim))
-        self.register_buffer('registry_occupied', torch.zeros(max_slots, dtype=torch.bool))
-        self.register_buffer('n_registered', torch.tensor(0, dtype=torch.long))
+        # Per-batch-element registries (initialized in forward)
+        # Shape: [B, max_slots, dim] and [B, max_slots]
+        self._registry_features: Optional[torch.Tensor] = None
+        self._registry_occupied: Optional[torch.Tensor] = None
+        self._batch_size: int = 0
         
         # V1 compatibility
         self._prev_slots: Optional[torch.Tensor] = None
         self._last_match_indices: Optional[torch.Tensor] = None
     
     def reset(self):
-        """Reset for new video sequence."""
-        self.registry_features.zero_()
-        self.registry_occupied.zero_()
-        self.n_registered.zero_()
+        """Reset for new video sequence (called at start of each chunk)."""
+        self._registry_features = None
+        self._registry_occupied = None
+        self._batch_size = 0
         self._prev_slots = None
         self._last_match_indices = None
+    
+    def _init_registry(self, batch_size: int, device: torch.device):
+        """Initialize per-batch-element registries."""
+        self._registry_features = torch.zeros(batch_size, self.max_slots, self.dim, device=device)
+        self._registry_occupied = torch.zeros(batch_size, self.max_slots, dtype=torch.bool, device=device)
+        self._batch_size = batch_size
     
     def _hungarian_match(self, prev_slots: torch.Tensor, curr_slots: torch.Tensor, return_indices: bool = False):
         """V1 compatibility: standard Hungarian matching without memory."""
@@ -1550,17 +1560,26 @@ class HungarianMemoryMatcher(nn.Module):
             return reordered, torch.stack(indices_list, dim=0)
         return reordered
     
-    def _match_and_update(self, candidates: torch.Tensor) -> tuple:
-        """Match candidates to registry and reorder by global ID.
+    def _match_and_update_single(self, b: int, candidates: torch.Tensor) -> tuple:
+        """Match candidates to registry for a single batch element.
         
-        Key insight: Registry is ONLY for ID tracking. We return the original
-        candidates reordered to match registry positions, preserving gradients.
+        Args:
+            b: batch index
+            candidates: [n_valid, D] valid slots for this batch element
+            
+        Returns:
+            out_slots: [max_slots, D] reordered slots with gradients
+            out_mask: [max_slots] existence mask
         """
         from scipy.optimize import linear_sum_assignment
         device = candidates.device
         n_candidates = candidates.shape[0]
         
-        occupied_idx = self.registry_occupied.nonzero(as_tuple=True)[0]
+        # Get this batch element's registry
+        reg_features = self._registry_features[b]  # [max_slots, D]
+        reg_occupied = self._registry_occupied[b]  # [max_slots]
+        
+        occupied_idx = reg_occupied.nonzero(as_tuple=True)[0]
         n_occupied = len(occupied_idx)
         
         # Output: reordered current slots (with gradients) + mask
@@ -1571,16 +1590,15 @@ class HungarianMemoryMatcher(nn.Module):
             # First frame: register all candidates, assign to slots 0..n-1
             n_new = min(n_candidates, self.max_slots)
             for i in range(n_new):
-                self.registry_features[i] = candidates[i].detach()  # Registry stores detached
-                self.registry_occupied[i] = True
+                self._registry_features[b, i] = candidates[i].detach()
+                self._registry_occupied[b, i] = True
                 out_slots[i] = candidates[i]  # Output has gradients
                 out_mask[i] = 1.0
-            self.n_registered = torch.tensor(n_new, device=device, dtype=torch.long)
             return out_slots, out_mask
         
         # Compute cost matrix: candidates vs occupied registry slots
         cand_norm = F.normalize(candidates.detach(), dim=-1, eps=1e-8)
-        reg_norm = F.normalize(self.registry_features[occupied_idx], dim=-1, eps=1e-8)
+        reg_norm = F.normalize(reg_features[occupied_idx], dim=-1, eps=1e-8)
         cost_matrix = 1 - (cand_norm @ reg_norm.t())
         cost_matrix = torch.nan_to_num(cost_matrix, nan=1.0)  # NaN → max cost
         
@@ -1601,22 +1619,21 @@ class HungarianMemoryMatcher(nn.Module):
                 out_slots[reg_idx] = candidates[cand_idx]  # Original with gradients
                 out_mask[reg_idx] = 1.0
                 # Update registry for future matching (detached)
-                self.registry_features[reg_idx] = (
-                    self.ema_decay * self.registry_features[reg_idx] +
+                self._registry_features[b, reg_idx] = (
+                    self.ema_decay * self._registry_features[b, reg_idx] +
                     (1 - self.ema_decay) * candidates[cand_idx].detach()
                 )
         
         # UNMATCHED candidates: assign to new registry slots
         for cand_idx in range(n_candidates):
             if cand_idx not in matched_candidates:
-                empty_slots = (~self.registry_occupied).nonzero(as_tuple=True)[0]
+                empty_slots = (~self._registry_occupied[b]).nonzero(as_tuple=True)[0]
                 if len(empty_slots) > 0:
                     new_idx = empty_slots[0].item()
-                    self.registry_features[new_idx] = candidates[cand_idx].detach()
-                    self.registry_occupied[new_idx] = True
+                    self._registry_features[b, new_idx] = candidates[cand_idx].detach()
+                    self._registry_occupied[b, new_idx] = True
                     out_slots[new_idx] = candidates[cand_idx]  # Original with gradients
                     out_mask[new_idx] = 1.0
-                    self.n_registered += 1
         
         # OCCLUDED: registry slots not matched this frame
         # Keep mask=0 (empty for this frame), registry retains features for future
@@ -1642,7 +1659,7 @@ class HungarianMemoryMatcher(nn.Module):
         
         Returns (memory mode):
             out_slots: [B, max_slots, D] ordered by persistent global ID
-            out_mask: [B, max_slots] - 1.0=matched, 0.5=occluded, 0=empty
+            out_mask: [B, max_slots] - 1.0=matched, 0.0=empty/occluded
         Returns (V1 mode when existence_mask is None):
             reordered_slots: [B, K, D]
         """
@@ -1662,7 +1679,11 @@ class HungarianMemoryMatcher(nn.Module):
             self._last_match_indices = indices
             return (reordered, None) if return_weights else reordered
         
-        # Memory mode: process with registry
+        # Memory mode: initialize per-batch registries if needed
+        if self._registry_features is None or self._batch_size != B:
+            self._init_registry(B, device)
+        
+        # Process each batch element with its own registry
         out_slots = torch.zeros(B, self.max_slots, D, device=device)
         out_mask = torch.zeros(B, self.max_slots, device=device)
         
@@ -1674,7 +1695,7 @@ class HungarianMemoryMatcher(nn.Module):
                 # No valid slots: return zeros with empty mask
                 continue
             
-            out_slots[b], out_mask[b] = self._match_and_update(valid_slots)
+            out_slots[b], out_mask[b] = self._match_and_update_single(b, valid_slots)
         
         if return_weights:
             return out_slots, out_mask, None
