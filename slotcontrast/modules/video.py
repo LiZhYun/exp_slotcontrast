@@ -309,7 +309,7 @@ class ScanOverTime(nn.Module):
         )
         is_memory_matcher = (
             hasattr(self.module, "predictor")
-            and hasattr(self.module.predictor, "registry_features")
+            and hasattr(self.module.predictor, "max_slots")
         )
         if hasattr(self.module, "predictor") and hasattr(self.module.predictor, "reset"):
             self.module.predictor.reset()
@@ -351,7 +351,7 @@ class ScanOverTime(nn.Module):
             state = output[self.next_state_key]
             
             # Collect Hungarian match indices
-            if is_hungarian and not is_memory_matcher:
+            if is_hungarian:
                 indices = self.module.predictor.get_last_match_indices()
                 match_indices_list.append(indices)
 

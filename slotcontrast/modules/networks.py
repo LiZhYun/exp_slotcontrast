@@ -1570,6 +1570,7 @@ class HungarianMemoryMatcher(nn.Module):
         Returns:
             out_slots: [max_slots, D] reordered slots with gradients
             out_mask: [max_slots] existence mask
+            indices: [n_candidates] mapping from candidate idx to output slot idx
         """
         from scipy.optimize import linear_sum_assignment
         device = candidates.device
@@ -1582,9 +1583,10 @@ class HungarianMemoryMatcher(nn.Module):
         occupied_idx = reg_occupied.nonzero(as_tuple=True)[0]
         n_occupied = len(occupied_idx)
         
-        # Output: reordered current slots (with gradients) + mask
+        # Output: reordered current slots (with gradients) + mask + indices
         out_slots = torch.zeros(self.max_slots, candidates.shape[-1], device=device)
         out_mask = torch.zeros(self.max_slots, device=device)
+        cand_to_out = torch.full((n_candidates,), -1, dtype=torch.long, device=device)
         
         if n_occupied == 0:
             # First frame: register all candidates, assign to slots 0..n-1
@@ -1594,7 +1596,8 @@ class HungarianMemoryMatcher(nn.Module):
                 self._registry_occupied[b, i] = True
                 out_slots[i] = candidates[i]  # Output has gradients
                 out_mask[i] = 1.0
-            return out_slots, out_mask
+                cand_to_out[i] = i
+            return out_slots, out_mask, cand_to_out
         
         # Compute cost matrix: candidates vs occupied registry slots
         cand_norm = F.normalize(candidates.detach(), dim=-1, eps=1e-8)
@@ -1612,13 +1615,15 @@ class HungarianMemoryMatcher(nn.Module):
             cost = cost_matrix[cand_idx, occ_idx].item()
             reg_idx = occupied_idx[occ_idx].item()
             
+            # Always output matched slot (Hungarian assignment)
+            matched_registry.add(reg_idx)
+            matched_candidates.add(cand_idx)
+            out_slots[reg_idx] = candidates[cand_idx]  # Original with gradients
+            out_mask[reg_idx] = 1.0
+            cand_to_out[cand_idx] = reg_idx
+            
+            # Only update registry with EMA if match is confident
             if cost <= self.match_threshold:
-                # MATCHED: Put current candidate at registry position (keeps gradient!)
-                matched_registry.add(reg_idx)
-                matched_candidates.add(cand_idx)
-                out_slots[reg_idx] = candidates[cand_idx]  # Original with gradients
-                out_mask[reg_idx] = 1.0
-                # Update registry for future matching (detached)
                 self._registry_features[b, reg_idx] = (
                     self.ema_decay * self._registry_features[b, reg_idx] +
                     (1 - self.ema_decay) * candidates[cand_idx].detach()
@@ -1634,6 +1639,7 @@ class HungarianMemoryMatcher(nn.Module):
                     self._registry_occupied[b, new_idx] = True
                     out_slots[new_idx] = candidates[cand_idx]  # Original with gradients
                     out_mask[new_idx] = 1.0
+                    cand_to_out[cand_idx] = new_idx
         
         # OCCLUDED: registry slots not matched this frame
         # Keep mask=0 (empty for this frame), registry retains features for future
@@ -1641,7 +1647,7 @@ class HungarianMemoryMatcher(nn.Module):
             if idx.item() not in matched_registry:
                 out_mask[idx] = 0.0  # Not visible this frame
         
-        return out_slots, out_mask
+        return out_slots, out_mask, cand_to_out
     
     def forward(
         self,
@@ -1686,6 +1692,8 @@ class HungarianMemoryMatcher(nn.Module):
         # Process each batch element with its own registry
         out_slots = torch.zeros(B, self.max_slots, D, device=device)
         out_mask = torch.zeros(B, self.max_slots, device=device)
+        # Track match indices: [B, max_slots] where value is output slot idx
+        match_indices = torch.arange(self.max_slots, device=device).unsqueeze(0).expand(B, -1).clone()
         
         for b in range(B):
             valid_mask = existence_mask[b].bool()
@@ -1695,7 +1703,13 @@ class HungarianMemoryMatcher(nn.Module):
                 # No valid slots: return zeros with empty mask
                 continue
             
-            out_slots[b], out_mask[b] = self._match_and_update_single(b, valid_slots)
+            out_slots[b], out_mask[b], cand_to_out = self._match_and_update_single(b, valid_slots)
+            # Build reverse mapping: for each output slot, which candidate went there
+            for cand_idx, out_idx in enumerate(cand_to_out.tolist()):
+                if out_idx >= 0:
+                    match_indices[b, out_idx] = cand_idx
+        
+        self._last_match_indices = match_indices
         
         if return_weights:
             return out_slots, out_mask, None
