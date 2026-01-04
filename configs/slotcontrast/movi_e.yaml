@@ -145,8 +145,8 @@ model:
     pre_match: false           # Match BEFORE slot attention (HungarianPredictor only)
     # === HungarianMemoryMatcher V2 options (persistent tracking) ===
     max_slots: ${globals.NUM_SLOTS}  # Fixed registry capacity
-    match_threshold: 0.3       # Cosine distance threshold for valid match (lower=stricter)
-    ema_decay: 0.9             # EMA weight: new = decay*old + (1-decay)*current
+    match_threshold: 2.0       # Cosine distance threshold for valid match (lower=stricter)
+    ema_decay: 0.0             # EMA weight: new = decay*old + (1-decay)*current
 
 val_metrics:
   ari:
