@@ -113,8 +113,8 @@ class LatentProcessor(nn.Module):
             use_init_state = hasattr(self.predictor, 'cross_attn') and init_state is not None
             # Check if predictor is HungarianPredictor (matching-based)
             is_hungarian = hasattr(self.predictor, '_hungarian_match')
-            # Check if predictor is HungarianMemoryMatcher (has registry)
-            is_memory_matcher = hasattr(self.predictor, 'registry_features')
+            # Check if predictor is HungarianMemoryMatcher (has max_slots for persistent registry)
+            is_memory_matcher = hasattr(self.predictor, 'max_slots')
             
             if use_memory:
                 result = self.predictor(
