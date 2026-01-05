@@ -14,15 +14,86 @@ CONFIGS=(
 
     # ytvis2021
     "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 2 0.0 2.0 7"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 2 0.0 1.5 7"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 2 0.0 1.0 7"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 2 0.0 0.5 7"
+
     "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 2 0.1 2.0 7"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 2 0.1 1.5 7"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 2 0.1 1.0 7"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 2 0.1 0.5 7"
+
     "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 2 0.2 2.0 7"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 2 0.2 1.5 7"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 2 0.2 1.0 7"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 2 0.2 0.5 7"
+
     "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 2 0.3 2.0 7"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 2 0.3 1.5 7"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 2 0.3 1.0 7"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 2 0.3 0.5 7"
+
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 2 0.0 2.0 20"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 2 0.0 1.5 20"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 2 0.0 1.0 20"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 2 0.0 0.5 20"
+
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 2 0.1 2.0 20"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 2 0.1 1.5 20"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 2 0.1 1.0 20"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 2 0.1 0.5 20"
+
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 2 0.2 2.0 20"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 2 0.2 1.5 20"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 2 0.2 1.0 20"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 2 0.2 0.5 20"
+
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 2 0.3 2.0 20"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 2 0.3 1.5 20"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 2 0.3 1.0 20"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 2 0.3 0.5 20"
+    
 
     # movi_e
     "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 1 0.0 2.0 15"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 1 0.0 1.5 15"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 1 0.0 1.0 15"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 1 0.0 0.5 15"
+
     "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 1 0.1 2.0 15"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 1 0.1 1.5 15"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 1 0.1 1.0 15"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 1 0.1 0.5 15"
+
     "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 1 0.2 2.0 15"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 1 0.2 1.5 15"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 1 0.2 1.0 15"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 1 0.2 0.5 15"
+
     "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 1 0.3 2.0 15"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 1 0.3 1.5 15"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 1 0.3 1.0 15"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 1 0.3 0.5 15"
+
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 1 0.0 2.0 20"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 1 0.0 1.5 20"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 1 0.0 1.0 20"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 1 0.0 0.5 20"
+
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 1 0.1 2.0 20"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 1 0.1 1.5 20"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 1 0.1 1.0 20"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 1 0.1 0.5 20"
+
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 1 0.2 2.0 20"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 1 0.2 1.5 20"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 1 0.2 1.0 20"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 1 0.2 0.5 20"
+
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 1 0.3 2.0 20"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 1 0.3 1.5 20"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 1 0.3 1.0 20"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 1 0.3 0.5 20"
 
     )
 
