@@ -884,9 +884,15 @@ class GreedyFeatureInitV2(nn.Module):
     
     Extends V1 with:
     - Returns (slots, n_objects, existence_mask) tuple
-    - init_threshold for early stopping when max activation < threshold
+    - init_threshold for early stopping using normalized saliency (scale-invariant)
     - Supports all V1 saliency modes and selection modes
     - Uses V1's soft multiplicative suppression (no extra hyperparameters)
+    
+    Threshold behavior:
+    - Saliency is normalized to [0, 1] per-frame before thresholding
+    - init_threshold=0.1 means "stop when best remaining patch is in bottom 10% 
+      of this frame's saliency range"
+    - This is scale-invariant across saliency modes and backbones
     """
     
     def __init__(
@@ -952,18 +958,25 @@ class GreedyFeatureInitV2(nn.Module):
             self.neighbor_radius, self.saliency_alpha, self.saliency_smoothing, self.temperature
         )
         
+        # Normalize saliency to [0, 1] per-sample for scale-invariant thresholding
+        # This makes init_threshold interpretable: 0.1 = "bottom 10% of saliency range"
+        saliency_min = base_saliency.min(dim=-1, keepdim=True)[0]
+        saliency_max = base_saliency.max(dim=-1, keepdim=True)[0]
+        normalized_saliency = (base_saliency - saliency_min) / (saliency_max - saliency_min + 1e-8)
+        
         # Soft suppression mask (multiplicative, like V1)
         suppression_mask = torch.ones(B, N, device=device)
         active_samples = torch.ones(B, device=device, dtype=torch.bool)
         
         for slot_idx in range(self.n_slots):
-            # Apply soft suppression
-            masked_saliency = base_saliency * suppression_mask
+            # Apply soft suppression to normalized saliency
+            masked_saliency = normalized_saliency * suppression_mask
             
-            # Find max activation
+            # Find max activation (on normalized scale)
             max_saliency, max_idx = masked_saliency.max(dim=-1)
             
-            # Early stopping (per-sample)
+            # Early stopping on normalized saliency (scale-invariant)
+            # init_threshold=0.1 means "stop when best remaining is in bottom 10% of original range"
             if self.init_threshold > 0 and slot_idx >= self.min_slots:
                 should_stop = max_saliency < self.init_threshold
                 active_samples = active_samples & ~should_stop

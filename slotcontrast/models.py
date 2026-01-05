@@ -525,10 +525,18 @@ class ObjectCentricModel(pl.LightningModule):
 
     def compute_loss(self, outputs: Dict[str, Any]) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         losses = {}
+        existence_mask = outputs.get("existence_mask", None)
+        
         for name, loss_fn in self.loss_fns.items():
             prediction = loss_fn.get_prediction(outputs)
             target = outputs["targets"][name]
-            loss = loss_fn(prediction, target)
+            
+            # Pass existence_mask to losses that support it
+            if hasattr(loss_fn, 'mask_key') and existence_mask is not None:
+                loss = loss_fn(prediction, target, existence_mask=existence_mask)
+            else:
+                loss = loss_fn(prediction, target)
+            
             # Reduce all losses to scalars for logging
             if loss.ndim > 0:
                 loss = loss.mean()
@@ -564,6 +572,10 @@ class ObjectCentricModel(pl.LightningModule):
             to_log["train/hungarian_identity_ratio"] = self._compute_identity_ratio(
                 outputs["processor"]["hungarian_match_indices"]
             )
+
+        # Log n_objects (for variable slot support)
+        if "n_objects" in outputs:
+            to_log["train/n_objects"] = outputs["n_objects"].float().mean()
 
         if self.train_metrics and self.dynamics_predictor:
             prediction_batch = copy.deepcopy(batch)
@@ -623,6 +635,10 @@ class ObjectCentricModel(pl.LightningModule):
             to_log["val/hungarian_identity_ratio"] = self._compute_identity_ratio(
                 outputs["processor"]["hungarian_match_indices"]
             )
+
+        # Log n_objects (for variable slot support)
+        if "n_objects" in outputs:
+            to_log["val/n_objects"] = outputs["n_objects"].float().mean()
 
         if self.dynamics_predictor:
             prediction_batch = deepcopy(batch)
