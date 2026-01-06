@@ -570,7 +570,8 @@ class ObjectCentricModel(pl.LightningModule):
         # Log Hungarian match indices (fraction of identity matches)
         if "hungarian_match_indices" in outputs["processor"]:
             to_log["train/hungarian_identity_ratio"] = self._compute_identity_ratio(
-                outputs["processor"]["hungarian_match_indices"]
+                outputs["processor"]["hungarian_match_indices"],
+                outputs.get("existence_masks"),
             )
 
         # Log n_objects (for variable slot support)
@@ -633,7 +634,8 @@ class ObjectCentricModel(pl.LightningModule):
         # Log Hungarian match indices (fraction of identity matches)
         if "hungarian_match_indices" in outputs["processor"]:
             to_log["val/hungarian_identity_ratio"] = self._compute_identity_ratio(
-                outputs["processor"]["hungarian_match_indices"]
+                outputs["processor"]["hungarian_match_indices"],
+                outputs.get("existence_masks"),
             )
 
         # Log n_objects (for variable slot support)
@@ -693,16 +695,35 @@ class ObjectCentricModel(pl.LightningModule):
             log_dict[name] = values
 
     @staticmethod
-    def _compute_identity_ratio(match_indices_list: List[Optional[torch.Tensor]]) -> torch.Tensor:
-        """Compute fraction of slots that maintain identity mapping across frames."""
+    def _compute_identity_ratio(
+        match_indices_list: List[Optional[torch.Tensor]],
+        existence_masks: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """Compute fraction of valid slots that maintain identity mapping across frames.
+        
+        Args:
+            match_indices_list: List of [B, N] match indices per frame (None for first frame)
+            existence_masks: [B, T, N] or [B, N] mask indicating valid slots (1=valid, 0=invalid)
+        """
         total_matches = 0
         identity_matches = 0
-        for indices in match_indices_list:
+        for t, indices in enumerate(match_indices_list):
             if indices is not None:  # Skip first frame (no matching)
                 B, N = indices.shape
                 identity = torch.arange(N, device=indices.device).unsqueeze(0).expand(B, N)
-                identity_matches += (indices == identity).sum().item()
-                total_matches += B * N
+                is_identity = (indices == identity)  # [B, N]
+                
+                # Only count valid slots if existence_masks provided
+                if existence_masks is not None:
+                    if existence_masks.dim() == 3:  # [B, T, N]
+                        mask = existence_masks[:, t + 1]  # t+1 because t=0 is None (first frame)
+                    else:  # [B, N] - same mask for all frames
+                        mask = existence_masks
+                    identity_matches += (is_identity * mask).sum().item()
+                    total_matches += mask.sum().item()
+                else:
+                    identity_matches += is_identity.sum().item()
+                    total_matches += B * N
         if total_matches == 0:
             return torch.tensor(1.0)  # No matching happened, assume identity
         return torch.tensor(identity_matches / total_matches)

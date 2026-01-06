@@ -972,19 +972,20 @@ class GreedyFeatureInitV2(nn.Module):
             # Apply soft suppression to normalized saliency
             masked_saliency = normalized_saliency * suppression_mask
             
-            # Find max activation (on normalized scale)
-            max_saliency, max_idx = masked_saliency.max(dim=-1)
-            
-            # Early stopping on normalized saliency (scale-invariant)
-            # init_threshold=0.1 means "stop when best remaining is in bottom 10% of original range"
-            if self.init_threshold > 0 and slot_idx >= self.min_slots:
-                should_stop = max_saliency < self.init_threshold
-                active_samples = active_samples & ~should_stop
-                if not active_samples.any():
-                    break
+            # Find max activation (on suppressed scale for selection)
+            _, max_idx = masked_saliency.max(dim=-1)
             
             # Extract features at peak locations
             batch_idx = torch.arange(B, device=device)
+            
+            # Early stopping: check RAW saliency at selected location (not suppressed)
+            # This fixes the bug where suppression artificially lowered threshold checks
+            raw_saliency_at_max = normalized_saliency[batch_idx, max_idx]
+            if self.init_threshold > 0 and slot_idx >= self.min_slots:
+                should_stop = raw_saliency_at_max < self.init_threshold
+                active_samples = active_samples & ~should_stop
+                if not active_samples.any():
+                    break
             selected = features[batch_idx, max_idx]
             
             # Apply selection mode refinement
