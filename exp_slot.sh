@@ -2,7 +2,7 @@
 
 # Dataset configuration - change this to switch datasets
 # Available configs: configs/slotcontrast/ytvis2021.yaml, configs/slotcontrast/movi_c.yaml, configs/slotcontrast/movi_e.yaml
-CONFIG_FILE="configs/slotcontrast/ytvis2021.yaml"
+CONFIG_FILE="configs/slotcontrast/movi_e.yaml"
 
 # Define experiment configurations
 # Format: "experiment_name use_ttt3r use_gated use_gated_predictor use_ttt use_gru loss_ss loss_cycle window_size"
