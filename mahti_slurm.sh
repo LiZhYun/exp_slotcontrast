@@ -1,9 +1,10 @@
 #!/bin/bash
 #SBATCH --job-name=slotcontrast_train
 #SBATCH --account=project_2017204
+#SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=12
-#SBATCH --mem=128G
+#SBATCH --partition=gpumedium
 #SBATCH --time=0-20:00:00
 #SBATCH --gres=gpu:a100:1
 #SBATCH --output=logs/train_%j.out
