@@ -4,7 +4,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=12
-#SBATCH --partition=gpumedium
+#SBATCH --partition=gpusmall
 #SBATCH --time=0-20:00:00
 #SBATCH --gres=gpu:a100:1
 #SBATCH --output=logs/train_%j.out
