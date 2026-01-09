@@ -55,7 +55,7 @@ model:
   loss_weights:
     loss_featrec: 1.0
     loss_ss: 0.5
-    loss_cycle: 0.5
+    loss_cycle: 0.0
 
   initializer:
     name: FixedLearnedInit # FixedLearnedInit, GreedyFeatureInit, GreedyFeatureInitV2, ClusterFeatureInit

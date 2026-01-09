@@ -57,7 +57,7 @@ model:
   loss_weights:
     loss_featrec: 1.0
     loss_ss: 0.5
-    loss_cycle: 0.5
+    loss_cycle: 0.0
     # loss_entropy: 0.1
 
 
