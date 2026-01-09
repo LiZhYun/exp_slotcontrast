@@ -56,6 +56,12 @@ parser.add_argument(
     help="Continue training from this log folder or checkpoint path",
 )
 parser.add_argument("--config_overrides_file", help="Configuration to override")
+parser.add_argument(
+    "--gpu-memory-fraction",
+    type=float,
+    default=None,
+    help="Limit GPU memory usage to this fraction (0.0-1.0). Useful for running multiple experiments on one GPU.",
+)
 parser.add_argument("config", help="Configuration to run")
 parser.add_argument("config_overrides", nargs="*", help="Additional arguments")
 
@@ -166,6 +172,12 @@ def _setup_trainer_config(trainer_config: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def main(args, config_overrides=None):
+    # Apply GPU memory limit if specified (for multi-experiment runs on single GPU)
+    if args.gpu_memory_fraction is not None:
+        if torch.cuda.is_available():
+            torch.cuda.set_per_process_memory_fraction(args.gpu_memory_fraction)
+            log_info(f"GPU memory limited to {args.gpu_memory_fraction * 100:.0f}% of available memory")
+
     rank_zero = utils.get_rank() == 0
     if config_overrides is None:
         config_overrides = args.config_overrides
