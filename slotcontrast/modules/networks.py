@@ -1603,33 +1603,35 @@ class HungarianMemoryMatcher(nn.Module):
         cand_norm = F.normalize(candidates.detach(), dim=-1, eps=1e-8)
         reg_norm = F.normalize(reg_features[occupied_idx], dim=-1, eps=1e-8)
         cost_matrix = 1 - (cand_norm @ reg_norm.t())
-        cost_matrix = torch.nan_to_num(cost_matrix, nan=1.0)  # NaN → max cost
+        cost_matrix = torch.nan_to_num(cost_matrix, nan=2.0)  # NaN → max cost
         
         # Hungarian assignment
         row_ind, col_ind = linear_sum_assignment(cost_matrix.cpu().numpy())
         
-        matched_registry = set()
-        matched_candidates = set()
+        matched_registry = set()  # Registry slots with ACCEPTED matches
+        matched_candidates = set()  # Candidates with ACCEPTED matches
         
+        # First pass: separate accepted vs rejected matches based on threshold
         for cand_idx, occ_idx in zip(row_ind, col_ind):
             cost = cost_matrix[cand_idx, occ_idx].item()
             reg_idx = occupied_idx[occ_idx].item()
             
-            # Always output matched slot (Hungarian assignment)
-            matched_registry.add(reg_idx)
-            matched_candidates.add(cand_idx)
-            out_slots[reg_idx] = candidates[cand_idx]  # Original with gradients
-            out_mask[reg_idx] = 1.0
-            cand_to_out[cand_idx] = reg_idx
-            
-            # Only update registry with EMA if match is confident
             if cost <= self.match_threshold:
+                # ACCEPTED match: output to registry slot and update with EMA
+                matched_registry.add(reg_idx)
+                matched_candidates.add(cand_idx)
+                out_slots[reg_idx] = candidates[cand_idx]  # Original with gradients
+                out_mask[reg_idx] = 1.0
+                cand_to_out[cand_idx] = reg_idx
+                
+                # Update registry with EMA
                 self._registry_features[b, reg_idx] = (
                     self.ema_decay * self._registry_features[b, reg_idx] +
                     (1 - self.ema_decay) * candidates[cand_idx].detach()
                 )
+            # REJECTED match (cost > threshold): candidate treated as new object below
         
-        # UNMATCHED candidates: assign to new registry slots
+        # UNMATCHED or REJECTED candidates: assign to new registry slots
         for cand_idx in range(n_candidates):
             if cand_idx not in matched_candidates:
                 empty_slots = (~self._registry_occupied[b]).nonzero(as_tuple=True)[0]
@@ -1641,7 +1643,7 @@ class HungarianMemoryMatcher(nn.Module):
                     out_mask[new_idx] = 1.0
                     cand_to_out[cand_idx] = new_idx
         
-        # OCCLUDED: registry slots not matched this frame
+        # OCCLUDED: registry slots not matched (or match was rejected) this frame
         # Keep mask=0 (empty for this frame), registry retains features for future
         for idx in occupied_idx:
             if idx.item() not in matched_registry:
