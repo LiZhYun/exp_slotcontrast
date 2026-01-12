@@ -3,7 +3,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=48
-#SBATCH --mem=200G
+#SBATCH --mem=512G
 #SBATCH --time=1-00:00:00
 #SBATCH --gres=gpu:h200:1
 #SBATCH --output=logs/train_multi_%j.out
@@ -46,7 +46,6 @@ OUTPUT_DIR="/scratch/work/liz23/slotcontrast/logs"
 # =============================================================================
 MAX_PARALLEL_EXPS=6          # Max experiments to run in parallel (conservative)
 GPU_MEMORY_FRACTION=0.15     # Memory fraction per experiment (~21GB each)
-NUM_WORKERS_PER_EXP=2        # Reduced workers when running multiple experiments
 
 # =============================================================================
 # Parse arguments: config_file followed by experiment overrides separated by ---
@@ -92,7 +91,6 @@ echo "=============================================="
 echo "Config: ${CONFIG_FILE}"
 echo "Number of experiments: ${NUM_EXPERIMENTS}"
 echo "GPU memory fraction per exp: ${GPU_MEMORY_FRACTION}"
-echo "Workers per experiment: ${NUM_WORKERS_PER_EXP}"
 echo "=============================================="
 
 # =============================================================================
@@ -119,8 +117,6 @@ for i in "${!EXPERIMENTS[@]}"; do
             --data-dir "${DATA_DIR}" \
             --log-dir "${OUTPUT_DIR}" \
             --gpu-memory-fraction ${GPU_MEMORY_FRACTION} \
-            "dataset.num_workers=${NUM_WORKERS_PER_EXP}" \
-            "dataset.num_val_workers=1"
     ) &
     
     PIDS+=($!)
