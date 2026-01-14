@@ -9,7 +9,7 @@
 # =============================================================================
 
 CONFIG_FILE="configs/slotcontrast/movi_e.yaml"
-EXPS_PER_JOB=6  # Number of experiments per SLURM job (based on ~13GB per exp, 141GB total)
+EXPS_PER_JOB=3  # Number of experiments per SLURM job (based on ~13GB per exp, 141GB total)
 
 # Define experiment configurations
 # Format: "experiment_name loss_ss init_name init_mode predictor neighbor_radius init_threshold match_threshold NUM_SLOTS"

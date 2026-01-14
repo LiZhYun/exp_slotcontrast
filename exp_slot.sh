@@ -105,6 +105,14 @@ CONFIGS=(
     # # "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 1 0.8 1.0 20"
     # # "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 1 0.8 0.5 20"
 
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 1 0.6 0.2 20"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 1 0.6 0.1 20"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 1 0.7 0.2 20"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 1 0.7 0.1 20"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 1 0.8 0.2 20"
+    "per_frame_vari_greedy_local_mem_hungarian_w_contrast 0.5 GreedyFeatureInitV2 per_frame networks.HungarianMemoryMatcher 1 0.8 0.1 20"
+
+
     )
 # n_object 都是很低 且 先上升一点 再下降的趋势 identity ratio一直很高 且ari mbo的趋势也和n_object类似 在n_object高的时候表现最好
 SEED=42

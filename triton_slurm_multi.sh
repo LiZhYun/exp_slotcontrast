@@ -2,10 +2,10 @@
 #SBATCH --job-name=slotcontrast_multi
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=48
-#SBATCH --mem=512G
+#SBATCH --cpus-per-task=24
+#SBATCH --mem=256G
 #SBATCH --time=1-00:00:00
-#SBATCH --gres=gpu:h200:1
+#SBATCH --gres=gpu:h100:1
 #SBATCH --output=logs/train_multi_%j.out
 #SBATCH --error=logs/train_multi_%j.err
 
@@ -44,8 +44,8 @@ OUTPUT_DIR="/scratch/work/liz23/slotcontrast/logs"
 # =============================================================================
 # Configuration
 # =============================================================================
-MAX_PARALLEL_EXPS=6          # Max experiments to run in parallel (conservative)
-GPU_MEMORY_FRACTION=0.15     # Memory fraction per experiment (~21GB each)
+MAX_PARALLEL_EXPS=3          # Max experiments to run in parallel (conservative)
+GPU_MEMORY_FRACTION=0.32     # Memory fraction per experiment (~21GB each)
 
 # =============================================================================
 # Parse arguments: config_file followed by experiment overrides separated by ---

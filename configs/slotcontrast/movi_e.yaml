@@ -186,7 +186,7 @@ dataset:
   val_batch_size: 4
   val_size: 250
   num_workers: 4
-  num_val_workers: 1
+  num_val_workers: 2
   train_pipeline:
     video_size: 24
     chunk_size: 4
