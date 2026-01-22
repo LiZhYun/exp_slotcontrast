@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# ytvis2021.yaml, movi_c.yaml, movi_e.yaml
-CONFIG_FILE="configs/slotcontrast/ytvis2021.yaml"
+# ytvis2021.yaml, movi_c.yaml, movi_d.yaml, movi_e.yaml
+CONFIG_FILE="configs/slotcontrast/movi_d.yaml"
 
 
 CONFIGS=(
@@ -10,12 +10,12 @@ CONFIGS=(
     # "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 2 42 2 3 local_consistency false 0.5"
     # "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 2 43 2 3 local_consistency false 0.5"
     # "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 2 44 2 3 local_consistency false 0.5"
-    "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 2 42 2 3 local_consistency false 1.0"
-    "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 2 43 2 3 local_consistency false 1.0"
-    "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 2 44 2 3 local_consistency false 1.0"
-    "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 2 42 2 3 local_consistency false 1.5"
-    "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 2 43 2 3 local_consistency false 1.5"
-    "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 2 44 2 3 local_consistency false 1.5"
+    # "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 2 42 2 3 local_consistency false 1.0"
+    # "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 2 43 2 3 local_consistency false 1.0"
+    # "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 2 44 2 3 local_consistency false 1.0"
+    # "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 2 42 2 3 local_consistency false 1.5"
+    # "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 2 43 2 3 local_consistency false 1.5"
+    # "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 2 44 2 3 local_consistency false 1.5"
 
     # # one iteration
     # "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 2 42 1 1 local_consistency false 0.5"
@@ -95,6 +95,34 @@ CONFIGS=(
     # "baseline_w_contrast FixedLearnedInit first_frame networks.TransformerEncoder 1 42 2 3 local_consistency false 1.0"
     # "baseline_w_contrast FixedLearnedInit first_frame networks.TransformerEncoder 1 43 2 3 local_consistency false 1.0"
     # "baseline_w_contrast FixedLearnedInit first_frame networks.TransformerEncoder 1 44 2 3 local_consistency false 1.0"
+
+
+    # movi_d
+    "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 42 2 3 local_consistency false 1.0"
+    "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 43 2 3 local_consistency false 1.0"
+    "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 44 2 3 local_consistency false 1.0"
+    "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 42 2 3 local_consistency false 0.5"
+    "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 43 2 3 local_consistency false 0.5"
+    "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 44 2 3 local_consistency false 0.5"
+    "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 42 2 3 local_consistency false 1.5"
+    "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 43 2 3 local_consistency false 1.5"
+    "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 44 2 3 local_consistency false 1.5"
+
+    # one iteration
+    "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 42 1 1 local_consistency false 1.0"
+    "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 43 1 1 local_consistency false 1.0"
+    "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 44 1 1 local_consistency false 1.0"
+    "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 42 1 1 local_consistency false 0.5"
+    "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 43 1 1 local_consistency false 0.5"
+    "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 44 1 1 local_consistency false 0.5"
+    "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 42 1 1 local_consistency false 1.5"
+    "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 43 1 1 local_consistency false 1.5"
+    "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 44 1 1 local_consistency false 1.5"
+
+    # baseline
+    "baseline_w_contrast FixedLearnedInit first_frame networks.TransformerEncoder 1 42 2 3 local_consistency false 1.0"
+    "baseline_w_contrast FixedLearnedInit first_frame networks.TransformerEncoder 1 43 2 3 local_consistency false 1.0"
+    "baseline_w_contrast FixedLearnedInit first_frame networks.TransformerEncoder 1 44 2 3 local_consistency false 1.0"
 
 
     # # movi_e
