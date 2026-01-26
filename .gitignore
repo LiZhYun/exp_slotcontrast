@@ -171,4 +171,16 @@ outputs/
 
 ytvis2021_resized/
 ytvis2021_raw/
+ytvis2021_saliency/
+ytvis2021_convergence/
+ytvis2021_inference/
+movi_e_raw/
+movi_d_raw/
+movi_inference/
 *.tar
+*.jpg
+*.png
+*.csv
+
+
+figs/
