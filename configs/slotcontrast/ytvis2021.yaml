@@ -101,7 +101,7 @@ model:
     pos_embed:
       name: utils.CoordinatePositionEmbed
       dim: ${globals.FEAT_DIM}
-      size: ${globals.FEAT_SIZE}
+      size: [37, 37]
     output_transform:
       name: networks.two_layer_mlp
       inp_dim: ${globals.FEAT_DIM}
