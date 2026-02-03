@@ -97,9 +97,9 @@ model:
         dynamic_img_size: True
     use_pos_embed: false
     pos_embed:
-      name: utils.CoordinatePositionEmbed
+      name: utils.LearnedPositionEmbed
       dim: ${globals.FEAT_DIM}
-      size: [24, 24]
+      n_patches: ${globals.NUM_PATCHES}
     output_transform:
       name: networks.two_layer_mlp
       inp_dim: ${globals.FEAT_DIM}
