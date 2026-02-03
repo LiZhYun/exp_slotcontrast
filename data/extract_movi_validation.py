@@ -110,7 +110,7 @@ def main():
     parser.add_argument(
         "--dataset",
         required=True,
-        choices=["movi_d", "movi_e"],
+        choices=["movi_c", "movi_d", "movi_e"],
         help="Which MOVI dataset to extract"
     )
     parser.add_argument(

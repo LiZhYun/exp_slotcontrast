@@ -95,13 +95,11 @@ model:
       pretrained: true
       model_kwargs:
         dynamic_img_size: True
-    # 3D Fourier positional embedding (optional - requires depth data)
     use_pos_embed: false
     pos_embed:
-      name: utils.FourierPositionEmbed3D
+      name: utils.CoordinatePositionEmbed
       dim: ${globals.FEAT_DIM}
-      patch_size: 14
-      num_bands: 64
+      size: ${globals.FEAT_SIZE}
     output_transform:
       name: networks.two_layer_mlp
       inp_dim: ${globals.FEAT_DIM}
