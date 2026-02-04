@@ -1320,26 +1320,39 @@ class HungarianPredictor(nn.Module):
     - "greedy": Match greedy→greedy (same space), reference is matched greedy init
     """
 
-    def __init__(self, dim: int, similarity: str = "cosine", pre_match: bool = False, **kwargs):
+    def __init__(self, dim: int, similarity: str = "cosine", pre_match: bool = False,
+                 use_hybrid_cost: bool = False, lambda_pos: float = 1.0,
+                 lambda_angular: float = 0.1, **kwargs):
         """
         Args:
             dim: Slot dimension (for interface compatibility, not used internally)
             similarity: Similarity metric - 'cosine' or 'l2'
             pre_match: False=post-match, True=pre-match (greedy→slot), "greedy"=greedy→greedy
+            use_hybrid_cost: Enable hybrid cost combining appearance, position, angular
+            lambda_pos: Weight for position (centroid distance) cost
+            lambda_angular: Weight for angular (motion consistency) cost
         """
         super().__init__()
         self.dim = dim
         self.similarity = similarity
         self.pre_match = pre_match
+        self.use_hybrid_cost = use_hybrid_cost
+        self.lambda_pos = lambda_pos
+        self.lambda_angular = lambda_angular
         self._prev_slots: Optional[torch.Tensor] = None
         self._prev_greedy: Optional[torch.Tensor] = None  # For greedy→greedy matching
         self._last_match_indices: Optional[torch.Tensor] = None  # [B, N] matching indices
+        # Hybrid cost state
+        self._prev_centroids: Optional[torch.Tensor] = None
+        self._prev_prev_centroids: Optional[torch.Tensor] = None
 
     def reset(self):
         """Reset state for new video sequence."""
         self._prev_slots = None
         self._prev_greedy = None
         self._last_match_indices = None
+        self._prev_centroids = None
+        self._prev_prev_centroids = None
     
     def get_last_match_indices(self) -> Optional[torch.Tensor]:
         """Return last matching indices [B, N] where indices[b, i] = source slot for position i."""
@@ -1372,6 +1385,10 @@ class HungarianPredictor(nn.Module):
         prev_slots: Optional[torch.Tensor] = None,
         existence_mask: Optional[torch.Tensor] = None,
         return_weights: bool = False,
+        # Hybrid cost inputs (optional, for backward compatibility)
+        centroids: Optional[torch.Tensor] = None,
+        prev_centroids: Optional[torch.Tensor] = None,
+        prev_prev_centroids: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """
         Args:
@@ -1379,6 +1396,9 @@ class HungarianPredictor(nn.Module):
             prev_slots: Previous frame slots [B, N, D] (optional, uses internal state if None)
             existence_mask: [B, N] which slots are valid (will be reordered along with slots)
             return_weights: Whether to return matching weights (for interface compatibility)
+            centroids: [B, N, 2] current slot centroids (for hybrid cost)
+            prev_centroids: [B, N, 2] previous centroids (for hybrid cost)
+            prev_prev_centroids: [B, N, 2] centroids from t-2 (for angular cost)
         
         Returns:
             Reordered slots to match previous frame's slot ordering [B, N, D]
@@ -1407,15 +1427,36 @@ class HungarianPredictor(nn.Module):
         if reference_slots is None:
             self._prev_slots = slots.detach()
             self._last_match_indices = None
+            # Initialize hybrid cost state
+            if self.use_hybrid_cost:
+                self._prev_centroids = centroids.detach() if centroids is not None else None
+                self._prev_prev_centroids = None
             if existence_mask is not None:
                 return slots, existence_mask, None
             if return_weights:
                 return slots, None
             return slots
         
-        reordered_slots, indices = self._hungarian_match(reference_slots, slots, return_indices=True)
+        # Use cached prev values if not provided
+        if self.use_hybrid_cost:
+            if prev_centroids is None:
+                prev_centroids = self._prev_centroids
+            if prev_prev_centroids is None:
+                prev_prev_centroids = self._prev_prev_centroids
+        
+        reordered_slots, indices = self._hungarian_match(
+            reference_slots, slots, return_indices=True,
+            prev_centroids=prev_centroids if self.use_hybrid_cost else None,
+            curr_centroids=centroids if self.use_hybrid_cost else None,
+            prev_prev_centroids=prev_prev_centroids if self.use_hybrid_cost else None,
+        )
         self._prev_slots = reordered_slots.detach()
         self._last_match_indices = indices
+        
+        # Update hybrid cost state history
+        if self.use_hybrid_cost:
+            self._prev_prev_centroids = self._prev_centroids
+            self._prev_centroids = centroids.detach() if centroids is not None else None
         
         # Reorder existence_mask if provided
         if existence_mask is not None:
@@ -1427,8 +1468,73 @@ class HungarianPredictor(nn.Module):
             return reordered_slots, None
         return reordered_slots
 
+    def _compute_hybrid_cost(
+        self,
+        prev_slots: torch.Tensor,
+        curr_slots: torch.Tensor,
+        prev_centroids: Optional[torch.Tensor] = None,
+        curr_centroids: Optional[torch.Tensor] = None,
+        prev_prev_centroids: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """Compute hybrid cost matrix combining appearance, position, and angular costs.
+        
+        Args:
+            prev_slots: [B, N, D]
+            curr_slots: [B, N, D]
+            prev_centroids: [B, N, 2] previous centroids
+            curr_centroids: [B, N, 2] current centroids
+            prev_prev_centroids: [B, N, 2] centroids from t-2 for angular cost
+        
+        Returns:
+            cost_matrix: [B, N, N] hybrid cost matrix
+        """
+        B, N, D = curr_slots.shape
+        
+        # 1. Appearance cost (base cost - always computed)
+        if self.similarity == "cosine":
+            prev_norm = F.normalize(prev_slots, dim=-1)
+            curr_norm = F.normalize(curr_slots, dim=-1)
+            sim_matrix = torch.bmm(prev_norm, curr_norm.transpose(1, 2))
+            appearance_cost = 1 - sim_matrix  # [B, N, N]
+        else:  # L2
+            diff = prev_slots.unsqueeze(2) - curr_slots.unsqueeze(1)
+            appearance_cost = diff.norm(dim=-1)
+        
+        cost_matrix = appearance_cost
+        
+        # 2. Position cost (centroid distance)
+        if self.lambda_pos > 0 and prev_centroids is not None and curr_centroids is not None:
+            # [B, N, 1, 2] - [B, 1, N, 2] -> [B, N, N]
+            spatial_diff = prev_centroids.unsqueeze(2) - curr_centroids.unsqueeze(1)
+            spatial_cost = spatial_diff.norm(dim=-1)  # [B, N, N]
+            # Normalize by sqrt(2) (max distance for normalized [0,1] coords)
+            spatial_cost = spatial_cost / (2 ** 0.5)
+            cost_matrix = cost_matrix + self.lambda_pos * spatial_cost
+        
+        # 3. Angular cost (motion consistency)
+        if (self.lambda_angular > 0 and prev_centroids is not None and 
+            curr_centroids is not None and prev_prev_centroids is not None):
+            # Motion vector from t-2 to t-1
+            prev_motion = prev_centroids - prev_prev_centroids  # [B, N, 2]
+            # Candidate motion vectors from t-1 to t (for each matching)
+            # [B, N, 1, 2] - [B, 1, N, 2] -> [B, N, N, 2]
+            curr_motion = curr_centroids.unsqueeze(1) - prev_centroids.unsqueeze(2)
+            
+            # Cosine distance between motion vectors
+            prev_motion_norm = F.normalize(prev_motion, dim=-1, eps=1e-8)  # [B, N, 2]
+            curr_motion_norm = F.normalize(curr_motion, dim=-1, eps=1e-8)  # [B, N, N, 2]
+            # Dot product: [B, N, 1, 2] * [B, N, N, 2] -> [B, N, N]
+            cosine_sim = (prev_motion_norm.unsqueeze(2) * curr_motion_norm).sum(dim=-1)
+            angular_cost = 1 - cosine_sim  # [B, N, N]
+            cost_matrix = cost_matrix + self.lambda_angular * angular_cost
+        
+        return cost_matrix
+
     def _hungarian_match(
-        self, prev_slots: torch.Tensor, curr_slots: torch.Tensor, return_indices: bool = False
+        self, prev_slots: torch.Tensor, curr_slots: torch.Tensor, return_indices: bool = False,
+        prev_centroids: Optional[torch.Tensor] = None,
+        curr_centroids: Optional[torch.Tensor] = None,
+        prev_prev_centroids: Optional[torch.Tensor] = None,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         """Apply Hungarian matching to align curr_slots with prev_slots ordering.
         
@@ -1436,6 +1542,8 @@ class HungarianPredictor(nn.Module):
             prev_slots: Reference slots from previous frame [B, N, D]
             curr_slots: Current slots to reorder [B, N, D]
             return_indices: If True, also return matching indices
+            prev_centroids, curr_centroids: Optional centroids for hybrid cost
+            prev_prev_centroids: Optional t-2 centroids for angular cost
         
         Returns:
             Reordered curr_slots [B, N, D], and optionally indices [B, N]
@@ -1445,19 +1553,22 @@ class HungarianPredictor(nn.Module):
         B, N, D = curr_slots.shape
         device = curr_slots.device
         
-        # Compute cost matrix based on similarity
-        if self.similarity == "cosine":
-            # Normalize for cosine similarity
-            prev_norm = F.normalize(prev_slots, dim=-1)  # [B, N, D]
-            curr_norm = F.normalize(curr_slots, dim=-1)  # [B, N, D]
-            # Similarity matrix: [B, N_prev, N_curr]
-            sim_matrix = torch.bmm(prev_norm, curr_norm.transpose(1, 2))
-            # Cost = 1 - similarity (minimize cost = maximize similarity)
-            cost_matrix = 1 - sim_matrix
-        else:  # L2 distance
-            # [B, N, 1, D] - [B, 1, N, D] -> [B, N, N]
-            diff = prev_slots.unsqueeze(2) - curr_slots.unsqueeze(1)
-            cost_matrix = diff.norm(dim=-1)
+        # Compute cost matrix
+        if self.use_hybrid_cost:
+            cost_matrix = self._compute_hybrid_cost(
+                prev_slots, curr_slots, prev_centroids, curr_centroids,
+                prev_prev_centroids
+            )
+        else:
+            # Original cost computation (backward compatible)
+            if self.similarity == "cosine":
+                prev_norm = F.normalize(prev_slots, dim=-1)
+                curr_norm = F.normalize(curr_slots, dim=-1)
+                sim_matrix = torch.bmm(prev_norm, curr_norm.transpose(1, 2))
+                cost_matrix = 1 - sim_matrix
+            else:  # L2 distance
+                diff = prev_slots.unsqueeze(2) - curr_slots.unsqueeze(1)
+                cost_matrix = diff.norm(dim=-1)
         
         # Apply Hungarian algorithm per batch element
         reordered_list = []

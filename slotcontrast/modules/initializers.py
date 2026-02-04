@@ -104,6 +104,42 @@ def compute_feature_density(features_norm: torch.Tensor, k: int = 10) -> torch.T
     return density
 
 
+def compute_slot_centroids_from_masks(
+    masks: torch.Tensor, patch_h: int, patch_w: int, normalize: bool = True
+) -> torch.Tensor:
+    """Compute spatial centroids from slot attention masks.
+    
+    Args:
+        masks: Slot attention weights [B, n_slots, n_patches]
+        patch_h, patch_w: Spatial grid dimensions
+        normalize: If True, normalize to [0, 1] range
+    
+    Returns:
+        centroids: [B, n_slots, 2] (h, w) coordinates
+    """
+    B, n_slots, n_patches = masks.shape
+    device = masks.device
+    
+    # Create coordinate grids
+    coords_h = torch.arange(patch_h, device=device, dtype=torch.float32)
+    coords_w = torch.arange(patch_w, device=device, dtype=torch.float32)
+    grid_h, grid_w = torch.meshgrid(coords_h, coords_w, indexing='ij')
+    grid_h = grid_h.reshape(n_patches)
+    grid_w = grid_w.reshape(n_patches)
+    
+    # Weighted average: sum(weight * coord) / sum(weight)
+    centroid_h = (masks * grid_h.view(1, 1, -1)).sum(dim=-1) / (masks.sum(dim=-1) + 1e-8)
+    centroid_w = (masks * grid_w.view(1, 1, -1)).sum(dim=-1) / (masks.sum(dim=-1) + 1e-8)
+    
+    centroids = torch.stack([centroid_h, centroid_w], dim=-1)  # [B, n_slots, 2]
+    
+    if normalize:
+        centroids[..., 0] /= (patch_h - 1 + 1e-8)
+        centroids[..., 1] /= (patch_w - 1 + 1e-8)
+    
+    return centroids
+
+
 def greedy_slot_initialization(
     features: torch.Tensor,
     n_slots: int,

@@ -103,6 +103,18 @@ class LatentProcessor(nn.Module):
         # 4. PREDICT: Generate initialization for NEXT frame
         attn_list = None
         out_existence_mask = existence_mask  # Default: pass through
+        
+        # Compute hybrid cost inputs if predictor uses it
+        curr_centroids = None
+        if self.predictor and hasattr(self.predictor, 'use_hybrid_cost') and self.predictor.use_hybrid_cost:
+            # Compute centroids from corrector masks
+            if corrector_masks is not None:
+                from slotcontrast.modules.initializers import compute_slot_centroids_from_masks
+                patch_h = int(inputs.shape[1] ** 0.5)
+                curr_centroids = compute_slot_centroids_from_masks(
+                    corrector_masks, patch_h, patch_h, normalize=True
+                )
+        
         if self.predictor and not self.skip_predictor:
             use_memory = (
                 hasattr(self.predictor, "use_memory")
@@ -130,11 +142,17 @@ class LatentProcessor(nn.Module):
                 )
             elif is_hungarian and existence_mask is not None:
                 # HungarianPredictor with existence_mask: reorder both slots and mask
-                result = self.predictor(updated_state, existence_mask=existence_mask, return_weights=True)
+                result = self.predictor(
+                    updated_state, existence_mask=existence_mask, return_weights=True,
+                    centroids=curr_centroids
+                )
                 predicted_state, out_existence_mask = result[0], result[1]
             elif is_hungarian:
                 # HungarianPredictor uses internal state, just pass slots
-                result = self.predictor(updated_state, return_weights=self.use_ttt3r)
+                result = self.predictor(
+                    updated_state, return_weights=self.use_ttt3r,
+                    centroids=curr_centroids
+                )
             else:
                 result = self.predictor(updated_state, return_weights=self.use_ttt3r)
             

@@ -145,6 +145,11 @@ model:
     max_slots: ${globals.NUM_SLOTS}  # Fixed registry capacity
     match_threshold: 2.0       # Cosine distance threshold for valid match (lower=stricter)
     ema_decay: 0.0             # EMA weight: new = decay*old + (1-decay)*current
+    
+    # === Hybrid Cost Matching (Optional - requires GreedyFeatureInit) ===
+    use_hybrid_cost: false      # Enable hybrid cost matching
+    lambda_pos: 1.0            # Weight for position (centroid distance) cost
+    lambda_angular: 0.1        # Weight for angular (motion consistency) cost
 
 val_metrics:
   ari:

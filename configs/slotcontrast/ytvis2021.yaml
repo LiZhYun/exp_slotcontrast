@@ -170,6 +170,13 @@ model:
     match_threshold: 2.0       # Cosine distance threshold for valid match (lower=stricter)
     ema_decay: 0.0             # EMA weight: new = decay*old + (1-decay)*current
     
+    # === Hybrid Cost Matching (Optional - requires GreedyFeatureInit) ===
+    # Combines appearance, position (centroid), and angular (motion) costs
+    # Requires initializer.name = GreedyFeatureInit or GreedyFeatureInitV2
+    use_hybrid_cost: false      # Enable hybrid cost matching
+    lambda_pos: 1.0            # Weight for position (centroid distance) cost
+    lambda_angular: 0.1        # Weight for angular (motion consistency) cost
+    
     # ============== MEMORY-CONDITIONED PREDICTOR (Optional) ==============
     # Uncomment to use memory-conditioned predictor with cross-attention
     # NOTE: If using memory, also uncomment memory_encoder and memory_bank above
