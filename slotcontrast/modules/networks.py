@@ -1322,7 +1322,7 @@ class HungarianPredictor(nn.Module):
 
     def __init__(self, dim: int, similarity: str = "cosine", pre_match: bool = False,
                  use_hybrid_cost: bool = False, lambda_pos: float = 1.0,
-                 lambda_angular: float = 0.1, **kwargs):
+                 lambda_angular: float = 0.1, use_iterative: bool = False, **kwargs):
         """
         Args:
             dim: Slot dimension (for interface compatibility, not used internally)
@@ -1331,6 +1331,7 @@ class HungarianPredictor(nn.Module):
             use_hybrid_cost: Enable hybrid cost combining appearance, position, angular
             lambda_pos: Weight for position (centroid distance) cost
             lambda_angular: Weight for angular (motion consistency) cost
+            use_iterative: Use iterative mutual-best matching instead of Hungarian
         """
         super().__init__()
         self.dim = dim
@@ -1339,6 +1340,7 @@ class HungarianPredictor(nn.Module):
         self.use_hybrid_cost = use_hybrid_cost
         self.lambda_pos = lambda_pos
         self.lambda_angular = lambda_angular
+        self.use_iterative = use_iterative
         self._prev_slots: Optional[torch.Tensor] = None
         self._prev_greedy: Optional[torch.Tensor] = None  # For greedy→greedy matching
         self._last_match_indices: Optional[torch.Tensor] = None  # [B, N] matching indices
@@ -1530,13 +1532,16 @@ class HungarianPredictor(nn.Module):
         
         return cost_matrix
 
-    def _hungarian_match(
+    def _iterative_match(
         self, prev_slots: torch.Tensor, curr_slots: torch.Tensor, return_indices: bool = False,
         prev_centroids: Optional[torch.Tensor] = None,
         curr_centroids: Optional[torch.Tensor] = None,
         prev_prev_centroids: Optional[torch.Tensor] = None,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
-        """Apply Hungarian matching to align curr_slots with prev_slots ordering.
+        """Iterative mutual-best matching with Hungarian fallback.
+        
+        Phase 1: Lock in confident matches where i is j's minimum AND j is i's minimum
+        Phase 2: Hungarian on remaining unmatched slots to ensure complete bijection
         
         Args:
             prev_slots: Reference slots from previous frame [B, N, D]
@@ -1548,6 +1553,140 @@ class HungarianPredictor(nn.Module):
         Returns:
             Reordered curr_slots [B, N, D], and optionally indices [B, N]
         """
+        from scipy.optimize import linear_sum_assignment
+        
+        B, N, D = curr_slots.shape
+        device = curr_slots.device
+        
+        # Compute cost matrix (reuse existing logic)
+        if self.use_hybrid_cost:
+            cost_matrix = self._compute_hybrid_cost(
+                prev_slots, curr_slots, prev_centroids, curr_centroids, prev_prev_centroids
+            )
+        else:
+            if self.similarity == "cosine":
+                prev_norm = F.normalize(prev_slots, dim=-1)
+                curr_norm = F.normalize(curr_slots, dim=-1)
+                sim_matrix = torch.bmm(prev_norm, curr_norm.transpose(1, 2))
+                cost_matrix = 1 - sim_matrix
+            else:
+                diff = prev_slots.unsqueeze(2) - curr_slots.unsqueeze(1)
+                cost_matrix = diff.norm(dim=-1)
+        
+        # Process each batch element
+        reordered_list = []
+        indices_list = []
+        
+        for b in range(B):
+            cost = cost_matrix[b]  # [N, N]
+            
+            # Phase 1: Iterative mutual-best matching
+            unmatched_prev = set(range(N))
+            unmatched_curr = set(range(N))
+            matches = {}  # prev_idx -> curr_idx
+            
+            while True:
+                if len(unmatched_prev) == 0:
+                    break
+                
+                # For each unmatched prev, find best curr
+                prev_to_curr = {}  # prev_idx -> best_curr_idx
+                for i in unmatched_prev:
+                    best_j = None
+                    best_cost = float('inf')
+                    for j in unmatched_curr:
+                        if cost[i, j] < best_cost:
+                            best_cost = cost[i, j]
+                            best_j = j
+                    if best_j is not None:
+                        prev_to_curr[i] = best_j
+                
+                # For each unmatched curr, find best prev
+                curr_to_prev = {}  # curr_idx -> best_prev_idx
+                for j in unmatched_curr:
+                    best_i = None
+                    best_cost = float('inf')
+                    for i in unmatched_prev:
+                        if cost[i, j] < best_cost:
+                            best_cost = cost[i, j]
+                            best_i = i
+                    if best_i is not None:
+                        curr_to_prev[j] = best_i
+                
+                # Find mutual bests: i->j and j->i
+                mutual_best = []
+                for i in unmatched_prev:
+                    if i in prev_to_curr:
+                        j = prev_to_curr[i]
+                        if j in curr_to_prev and curr_to_prev[j] == i:
+                            mutual_best.append((i, j))
+                
+                if len(mutual_best) == 0:
+                    break  # No more mutual-best pairs
+                
+                # Lock in mutual-best matches
+                for i, j in mutual_best:
+                    matches[i] = j
+                    unmatched_prev.remove(i)
+                    unmatched_curr.remove(j)
+            
+            # Phase 2: Hungarian on remaining unmatched
+            if len(unmatched_prev) > 0:
+                # Extract submatrix
+                unmatched_prev_list = sorted(list(unmatched_prev))
+                unmatched_curr_list = sorted(list(unmatched_curr))
+                
+                sub_cost = cost[unmatched_prev_list][:, unmatched_curr_list]
+                sub_cost_np = sub_cost.detach().cpu().numpy()
+                
+                row_ind, col_ind = linear_sum_assignment(sub_cost_np)
+                
+                # Map back to original indices
+                for r, c in zip(row_ind, col_ind):
+                    i = unmatched_prev_list[r]
+                    j = unmatched_curr_list[c]
+                    matches[i] = j
+            
+            # Build reordered output: position i gets curr_slots[matches[i]]
+            col_ind = [matches[i] for i in range(N)]
+            reordered = curr_slots[b, col_ind]
+            reordered_list.append(reordered)
+            indices_list.append(torch.tensor(col_ind, device=device, dtype=torch.long))
+        
+        reordered = torch.stack(reordered_list, dim=0)
+        if return_indices:
+            indices = torch.stack(indices_list, dim=0)
+            return reordered, indices
+        return reordered
+
+    def _hungarian_match(
+        self, prev_slots: torch.Tensor, curr_slots: torch.Tensor, return_indices: bool = False,
+        prev_centroids: Optional[torch.Tensor] = None,
+        curr_centroids: Optional[torch.Tensor] = None,
+        prev_prev_centroids: Optional[torch.Tensor] = None,
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+        """Apply matching to align curr_slots with prev_slots ordering.
+        
+        Uses iterative mutual-best matching if use_iterative=True, else standard Hungarian.
+        
+        Args:
+            prev_slots: Reference slots from previous frame [B, N, D]
+            curr_slots: Current slots to reorder [B, N, D]
+            return_indices: If True, also return matching indices
+            prev_centroids, curr_centroids: Optional centroids for hybrid cost
+            prev_prev_centroids: Optional t-2 centroids for angular cost
+        
+        Returns:
+            Reordered curr_slots [B, N, D], and optionally indices [B, N]
+        """
+        # Dispatch to iterative matching if enabled
+        if self.use_iterative:
+            return self._iterative_match(
+                prev_slots, curr_slots, return_indices,
+                prev_centroids, curr_centroids, prev_prev_centroids
+            )
+        
+        # Standard Hungarian matching
         from scipy.optimize import linear_sum_assignment
         
         B, N, D = curr_slots.shape

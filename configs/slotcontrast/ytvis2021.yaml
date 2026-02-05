@@ -176,6 +176,8 @@ model:
     use_hybrid_cost: false      # Enable hybrid cost matching
     lambda_pos: 1.0            # Weight for position (centroid distance) cost
     lambda_angular: 0.1        # Weight for angular (motion consistency) cost
+
+    use_iterative: false
     
     # ============== MEMORY-CONDITIONED PREDICTOR (Optional) ==============
     # Uncomment to use memory-conditioned predictor with cross-attention
