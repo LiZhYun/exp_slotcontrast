@@ -1,4 +1,4 @@
-experiment_group: icml26_ocl_rethinking
+experiment_group: gcv2_pos_emb
 experiment_name: movi_e
 
 globals:
