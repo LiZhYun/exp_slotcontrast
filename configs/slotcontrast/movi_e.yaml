@@ -4,9 +4,13 @@ experiment_name: movi_e
 globals:
   NUM_SLOTS: 15
   SLOT_DIM: 128
+  # DINOv2
   DINO_MODEL: vit_base_patch14_dinov2
-  FEAT_DIM: 768
   NUM_PATCHES: 576
+  # DINOv3
+  # DINO_MODEL: vit_base_patch16_dinov3
+  # NUM_PATCHES: 441
+  FEAT_DIM: 768
   NUM_GPUS: 1
   BATCH_SIZE_PER_GPU: 8
   TOTAL_BATCH_SIZE: "${mul: ${.NUM_GPUS}, ${.BATCH_SIZE_PER_GPU}}"
@@ -89,7 +93,7 @@ model:
       name: TimmExtractor
       model: ${globals.DINO_MODEL}
       features:
-      - vit_block12
+      - vit_block12 # vit_output
       - vit_block_keys12
       frozen: true
       pretrained: true

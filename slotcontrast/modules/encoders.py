@@ -138,23 +138,34 @@ class TimmExtractor(nn.Module):
 
         model = TimmExtractor._create_model(model_name, pretrained, checkpoint_path, model_kwargs)
 
+        # Use hooks instead of create_feature_extractor to avoid FX GraphModule issues
+        self.feature_outputs = {}
+        self.hooks = []
+        
         if self.features is not None:
-            nodes = torchvision.models.feature_extraction.get_graph_node_names(model)[0]
-
-            features = []
-            for name in self.features:
-                if name in TimmExtractor.FEATURE_ALIASES:
-                    name = TimmExtractor.FEATURE_ALIASES[name]
-
-                if not any(node.startswith(name) for node in nodes):
-                    raise ValueError(
-                        f"Requested features under node {name}, but this node does "
-                        f"not exist in model {model_name}. Available nodes: {nodes}"
-                    )
-
-                features.append(name)
-
-            model = torchvision.models.feature_extraction.create_feature_extractor(model, features)
+            # Register forward hooks to capture intermediate features
+            def get_hook(name):
+                def hook(module, input, output):
+                    self.feature_outputs[name] = output
+                return hook
+            
+            for feature_name in self.features:
+                # Translate aliases
+                target_name = feature_name
+                if feature_name in TimmExtractor.FEATURE_ALIASES:
+                    target_name = TimmExtractor.FEATURE_ALIASES[feature_name]
+                
+                # Navigate to the target module and register hook
+                parts = target_name.split('.')
+                target_module = model
+                for part in parts:
+                    if part.isdigit():
+                        target_module = target_module[int(part)]
+                    else:
+                        target_module = getattr(target_module, part)
+                
+                handle = target_module.register_forward_hook(get_hook(self.FEATURE_MAPPING.get(target_name, feature_name)))
+                self.hooks.append(handle)
 
         self.model = model
 
@@ -195,6 +206,9 @@ class TimmExtractor(nn.Module):
         return model
 
     def forward(self, inp):
+        # Clear previous feature outputs
+        self.feature_outputs.clear()
+        
         if self.frozen:
             with torch.no_grad():
                 outputs = self.model(inp)
@@ -202,10 +216,18 @@ class TimmExtractor(nn.Module):
             outputs = self.model(inp)
 
         if self.features is not None:
+            # Use captured features from hooks
+            outputs = self.feature_outputs
+            
             if self.is_vit:
-                outputs = {k: v[:, 1:] for k, v in outputs.items()}  # Remove CLS token
-            outputs = {self.FEATURE_MAPPING[key]: value for key, value in outputs.items()}
-            for name in self.features:
+                # Remove CLS token and register tokens
+                # DINOv2: [CLS, patch1, patch2, ...] -> remove 1 token
+                # DINOv3: [CLS, reg1, reg2, reg3, reg4, patch1, ...] -> remove 5 tokens
+                # Check if model has register tokens (DINOv3)
+                n_prefix_tokens = getattr(self.model, 'num_prefix_tokens', 1)
+                outputs = {k: v[:, n_prefix_tokens:] for k, v in outputs.items()}
+            
+            for name in list(outputs.keys()):
                 if ("keys" in name) or ("queries" in name) or ("values" in name):
                     feature_name = name.replace("queries", "keys").replace("values", "keys")
                     B, N, C = outputs[feature_name].shape
