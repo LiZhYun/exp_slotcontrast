@@ -10,7 +10,7 @@ globals:
   # DINOv3
   # DINO_MODEL: vit_base_patch16_dinov3
   # NUM_PATCHES: 441
-  FEAT_DIM: 768
+  FEAT_DIM: 768 # 1024 for vit_large
   NUM_GPUS: 1
   BATCH_SIZE_PER_GPU: 8
   TOTAL_BATCH_SIZE: "${mul: ${.NUM_GPUS}, ${.BATCH_SIZE_PER_GPU}}"

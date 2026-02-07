@@ -104,21 +104,27 @@ class FrameEncoder(nn.Module):
 
 
 class TimmExtractor(nn.Module):
-    """Feature extractor utilizing models from timm library."""
+    """Feature extractor utilizing models from timm library.
+    
+    Supports ViT models with different depths:
+    - ViT-Small/Base: 12 blocks (use vit_block1-12)
+    - ViT-Large: 24 blocks (use vit_block1-24)
+    - ViT-Huge: 32 blocks (use vit_block1-32)
+    """
 
-    # Convenience aliases for feature keys
+    # Convenience aliases for feature keys (supports up to 32 blocks for ViT-Huge)
     FEATURE_ALIASES = {
         **{f"resnet_block{i}": f"layer{i}" for i in range(1, 5)},
-        **{f"vit_block{i + 1}": f"blocks.{i}" for i in range(12)},
-        **{f"vit_block_values{i + 1}": f"blocks.{i}.attn.qkv" for i in range(12)},
-        **{f"vit_block_queries{i + 1}": f"blocks.{i}.attn.qkv" for i in range(12)},
-        **{f"vit_block_keys{i + 1}": f"blocks.{i}.attn.qkv" for i in range(12)},
+        **{f"vit_block{i + 1}": f"blocks.{i}" for i in range(32)},
+        **{f"vit_block_values{i + 1}": f"blocks.{i}.attn.qkv" for i in range(32)},
+        **{f"vit_block_queries{i + 1}": f"blocks.{i}.attn.qkv" for i in range(32)},
+        **{f"vit_block_keys{i + 1}": f"blocks.{i}.attn.qkv" for i in range(32)},
         "vit_output": "norm",
     }
     FEATURE_MAPPING = {
         **{f"layer{i}": f"resnet_block{i}" for i in range(1, 5)},
-        **{f"blocks.{i}": f"vit_block{i + 1}" for i in range(12)},
-        **{f"blocks.{i}.attn.qkv": f"vit_block_keys{i + 1}" for i in range(12)},
+        **{f"blocks.{i}": f"vit_block{i + 1}" for i in range(32)},
+        **{f"blocks.{i}.attn.qkv": f"vit_block_keys{i + 1}" for i in range(32)},
         "norm": "vit_output",
     }
 
