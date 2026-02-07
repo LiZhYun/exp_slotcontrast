@@ -25,7 +25,7 @@ def build(config, name: str):
             pos_embed=pos_embed,
             output_transform=output_transform,
             main_features_key=config.get("main_features_key", "vit_block12"),
-            **config_as_kwargs(config, ("backbone", "pos_embed", "output_transform")),
+            **config_as_kwargs(config, ("backbone", "pos_embed", "output_transform", "main_features_key")),
         )
     else:
         return None
