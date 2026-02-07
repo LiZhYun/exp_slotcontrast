@@ -1,37 +1,58 @@
 #!/bin/bash
 
 # ytvis2021.yaml, movi_c.yaml, movi_d.yaml, movi_e.yaml
-CONFIG_FILE="configs/slotcontrast/ytvis2021.yaml"
+CONFIG_FILE="configs/slotcontrast/movi_e.yaml"
 
 
 CONFIGS=(
+    # # ytvis2021
+    # "42 gcv2_dinov2_block12 GreedyFeatureInit per_frame networks.HungarianPredictor false vit_block12 vit_block12 vit_base_patch14_dinov2 1369 518"
+    # "42 gcv2_dinov2_output GreedyFeatureInit per_frame networks.HungarianPredictor false vit_output vit_output vit_base_patch14_dinov2 1369 518"
+    # "42 gcv2_learnable_pos_emb_dinov2_block12 GreedyFeatureInit per_frame networks.HungarianPredictor true vit_block12 vit_block12 vit_base_patch14_dinov2 1369 518"
+    # "42 gcv2_learnable_pos_emb_dinov2_output GreedyFeatureInit per_frame networks.HungarianPredictor true vit_output  vit_output vit_base_patch14_dinov2 1369 518"
 
-    # ytvis2021
-    "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 2 42 2 3 local_consistency false 0.5 true"
+    # "42 gcv2_dinov3_block12 GreedyFeatureInit per_frame networks.HungarianPredictor false vit_block12 vit_block12 vit_base_patch16_dinov3 1024 512"
+    # "42 gcv2_dinov3_output GreedyFeatureInit per_frame networks.HungarianPredictor false vit_output vit_output vit_base_patch16_dinov3 1024 512"
+    # "42 gcv2_learnable_pos_emb_dinov3_block12 GreedyFeatureInit per_frame networks.HungarianPredictor true vit_block12 vit_block12 vit_base_patch16_dinov3 1024 512"
+    # "42 gcv2_learnable_pos_emb_dinov3_output GreedyFeatureInit per_frame networks.HungarianPredictor true vit_output vit_output vit_base_patch16_dinov3 1024 512"
+    
+    # # # baseline
+    # "42 baseline_dinov2_block12 FixedLearnedInit first_frame networks.TransformerEncoder false vit_block12 vit_block12 vit_base_patch14_dinov2 1369 518"
+    # "42 baseline_dinov2_output FixedLearnedInit first_frame networks.TransformerEncoder false vit_output vit_output vit_base_patch14_dinov2 1369 518"
+    # "42 baseline_learnable_pos_emb_dinov2_block12 FixedLearnedInit first_frame networks.TransformerEncoder true vit_block12 vit_block12 vit_base_patch14_dinov2 1369 518"
+    # "42 baseline_learnable_pos_emb_dinov2_output FixedLearnedInit first_frame networks.TransformerEncoder true vit_output vit_output vit_base_patch14_dinov2 1369 518"
 
-    # baseline
-    "baseline_w_contrast FixedLearnedInit first_frame networks.TransformerEncoder 1 42 2 3 local_consistency false 1.0 true"
-
-
-    # # movi_c
-    # "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 42 2 3 local_consistency false 1.0 true"
-
-
-    # # movi_d
-    # "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 42 2 3 local_consistency false 0.5 true"
-
+    # "42 baseline_dinov3_block12 FixedLearnedInit first_frame networks.TransformerEncoder false vit_block12 vit_block12 vit_base_patch16_dinov3 1024 512"
+    # "42 baseline_dinov3_output FixedLearnedInit first_frame networks.TransformerEncoder false vit_output vit_output vit_base_patch16_dinov3 1024 512"
+    # "42 baseline_learnable_pos_emb_dinov3_block12 FixedLearnedInit first_frame networks.TransformerEncoder true vit_block12 vit_block12 vit_base_patch16_dinov3 1024 512"
+    # "42 baseline_learnable_pos_emb_dinov3_output FixedLearnedInit first_frame networks.TransformerEncoder true vit_output vit_output vit_base_patch16_dinov3 1024 512"
 
     # # movi_e
-    # "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 42 2 3 local_consistency false 1.0 true"
+    # "42 gcv2_dinov2_block12 GreedyFeatureInit per_frame networks.HungarianPredictor false ['vit_block12','vit_block_keys12'] vit_block12 vit_base_patch14_dinov2 576 336"
+    "42 gcv2_dinov2_output GreedyFeatureInit per_frame networks.HungarianPredictor false ['vit_output','vit_block_keys12'] vit_output vit_base_patch14_dinov2 576 336"
+    # "42 gcv2_learnable_pos_emb_dinov2_block12 GreedyFeatureInit per_frame networks.HungarianPredictor true ['vit_block12','vit_block_keys12'] vit_block12 vit_base_patch14_dinov2 576 336"
+    "42 gcv2_learnable_pos_emb_dinov2_output GreedyFeatureInit per_frame networks.HungarianPredictor true ['vit_output','vit_block_keys12'] vit_output vit_base_patch14_dinov2 576 336"
 
-    # # baseline
-    # "baseline_w_contrast FixedLearnedInit first_frame networks.TransformerEncoder 1 42 2 3 local_consistency false 1.0 true"
+    # "42 gcv2_dinov3_block12 GreedyFeatureInit per_frame networks.HungarianPredictor false ['vit_block12','vit_block_keys12'] vit_block12 vit_base_patch16_dinov3 441 336"
+    "42 gcv2_dinov3_output GreedyFeatureInit per_frame networks.HungarianPredictor false ['vit_output','vit_block_keys12'] vit_output vit_base_patch16_dinov3 441 336"
+    # "42 gcv2_learnable_pos_emb_dinov3_block12 GreedyFeatureInit per_frame networks.HungarianPredictor true ['vit_block12','vit_block_keys12'] vit_block12 vit_base_patch16_dinov3 441 336"
+    "42 gcv2_learnable_pos_emb_dinov3_output GreedyFeatureInit per_frame networks.HungarianPredictor true ['vit_output','vit_block_keys12'] vit_output vit_base_patch16_dinov3 441 336"
     
+    # baseline
+    # "42 baseline_dinov2_block12 FixedLearnedInit first_frame networks.TransformerEncoder false ['vit_block12','vit_block_keys12'] vit_block12 vit_base_patch14_dinov2 576 336"
+    "42 baseline_dinov2_output FixedLearnedInit first_frame networks.TransformerEncoder false ['vit_output','vit_block_keys12'] vit_output vit_base_patch14_dinov2 576 336"
+    # "42 baseline_learnable_pos_emb_dinov2_block12 FixedLearnedInit first_frame networks.TransformerEncoder true ['vit_block12','vit_block_keys12'] vit_block12 vit_base_patch14_dinov2 576 336"
+    "42 baseline_learnable_pos_emb_dinov2_output FixedLearnedInit first_frame networks.TransformerEncoder true ['vit_output','vit_block_keys12'] vit_output vit_base_patch14_dinov2 576 336"
+
+    # "42 baseline_dinov3_block12 FixedLearnedInit first_frame networks.TransformerEncoder false ['vit_block12','vit_block_keys12'] vit_block12 vit_base_patch16_dinov3 441 336"
+    "42 baseline_dinov3_output FixedLearnedInit first_frame networks.TransformerEncoder false ['vit_output','vit_block_keys12'] vit_output vit_base_patch16_dinov3 441 336"
+    # "42 baseline_learnable_pos_emb_dinov3_block12 FixedLearnedInit first_frame networks.TransformerEncoder true ['vit_block12','vit_block_keys12'] vit_block12 vit_base_patch16_dinov3 441 336"
+    "42 baseline_learnable_pos_emb_dinov3_output FixedLearnedInit first_frame networks.TransformerEncoder true ['vit_output','vit_block_keys12'] vit_output vit_base_patch16_dinov3 441 336"
     
     )
     
 for config in "${CONFIGS[@]}"; do
-    read -r exp_name init_name init_mode predictor neighbor_radius SEED n_iters f_n_iters saliency_mode skip_predictor saliency_alpha use_pos_embed <<< "$config"
+    read -r SEED exp_name init_name init_mode predictor use_pos_embed features main_features_key DINO_MODEL NUM_PATCHES input_size<<< "$config"
 
     echo "Submitting: $exp_name with config: $CONFIG_FILE"
     
@@ -39,14 +60,14 @@ for config in "${CONFIGS[@]}"; do
         "experiment_name=slotcontrast_${exp_name}" \
         "model.initializer.name=${init_name}" \
         "model.initializer.init_mode=${init_mode}" \
-        "model.initializer.neighbor_radius=${neighbor_radius}" \
-        "model.initializer.saliency_mode=${saliency_mode}" \
-        "model.initializer.saliency_alpha=${saliency_alpha}" \
         "model.predictor.name=${predictor}" \
-        "model.grouper.n_iters=${n_iters}" \
-        "model.latent_processor.first_step_corrector_args.n_iters=${f_n_iters}" \
-        "model.latent_processor.skip_predictor=${skip_predictor}" \
         "model.encoder.use_pos_embed=${use_pos_embed}" \
+        "model.encoder.backbone.features=${features}" \
+        "model.encoder.main_features_key=${main_features_key}" \
+        "globals.DINO_MODEL=${DINO_MODEL}" \
+        "globals.NUM_PATCHES=${NUM_PATCHES}" \
+        "dataset.train_pipeline.transforms.input_size=${input_size}" \
+        "dataset.val_pipeline.transforms.input_size=${input_size}" \
         "seed=${SEED}"
 done
 

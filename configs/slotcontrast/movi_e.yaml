@@ -110,6 +110,7 @@ model:
       outp_dim: ${globals.SLOT_DIM}
       hidden_dim: "${mul: ${globals.FEAT_DIM}, 2}"
       layer_norm: true
+    main_features_key: vit_block12
 
   grouper:
     name: SlotAttention

@@ -24,6 +24,7 @@ def build(config, name: str):
             backbone=utils.build_module(config.backbone, default_group="encoders"),
             pos_embed=pos_embed,
             output_transform=output_transform,
+            main_features_key=config.get("main_features_key", "vit_block12"),
             **config_as_kwargs(config, ("backbone", "pos_embed", "output_transform")),
         )
     else:
