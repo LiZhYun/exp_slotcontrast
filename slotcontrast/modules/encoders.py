@@ -41,6 +41,8 @@ class FrameEncoder(nn.Module):
         output_transform: Optional[nn.Module] = None,
         spatial_flatten: bool = False,
         main_features_key: str = "vit_block12",
+        normalize_features: bool = False,  # Add this parameter
+        normalization_type: str = "l2",    # 'l2' or 'standardize'
         **kwargs,
     ):
         super().__init__()
@@ -49,6 +51,8 @@ class FrameEncoder(nn.Module):
         self.output_transform = output_transform
         self.spatial_flatten = spatial_flatten
         self.main_features_key = main_features_key
+        self.normalize_features = normalize_features
+        self.normalization_type = normalization_type
 
     def forward(
         self, images: torch.Tensor, camera_data: Optional[Dict[str, torch.Tensor]] = None
@@ -60,6 +64,15 @@ class FrameEncoder(nn.Module):
             features = backbone_features[self.main_features_key].clone()
         else:
             features = backbone_features.clone()
+
+        # ADD NORMALIZATION HERE - before positional embeddings
+        if self.normalize_features:
+            if self.normalization_type == "l2":
+                # L2 normalization (for retrieval/similarity tasks)
+                features = torch.nn.functional.normalize(features, p=2, dim=-1)
+            elif self.normalization_type == "standardize":
+                # Standardization (for classification/dense tasks)
+                features = (features - features.mean()) / (features.std() + 1e-6)
 
         if self.pos_embed:
             if camera_data is not None:

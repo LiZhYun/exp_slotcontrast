@@ -4,7 +4,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=12
 #SBATCH --mem=128G
-#SBATCH --time=0-15:00:00
+#SBATCH --time=0-8:00:00
 #SBATCH --gres=gpu:h200:1
 #SBATCH --output=logs/train_%j.out
 #SBATCH --error=logs/train_%j.err

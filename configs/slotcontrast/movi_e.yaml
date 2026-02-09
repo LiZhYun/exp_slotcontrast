@@ -1,4 +1,4 @@
-experiment_group: gcv2_pos_emb
+experiment_group: gcv2_pos_emb_dino_exp
 experiment_name: movi_e
 
 globals:
@@ -17,7 +17,7 @@ globals:
   BASE_LR: 0.0001
 
 trainer:
-  max_steps: 100000
+  max_steps: 20000
   log_every_n_steps: 250
   val_check_interval: 2500
   gradient_clip_val: 0.05
@@ -111,6 +111,8 @@ model:
       hidden_dim: "${mul: ${globals.FEAT_DIM}, 2}"
       layer_norm: true
     main_features_key: vit_block12
+    normalize_features: false      # Enable normalization
+    normalization_type: "l2"      # or "standardize"
 
   grouper:
     name: SlotAttention
