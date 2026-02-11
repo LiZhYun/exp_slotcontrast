@@ -75,10 +75,30 @@ class FrameEncoder(nn.Module):
                 features = (features - features.mean()) / (features.std() + 1e-6)
 
         if self.pos_embed:
-            if camera_data is not None:
-                features = self.pos_embed(features, **camera_data)
-            else:
-                features = self.pos_embed(features)
+            # Prepare kwargs for pos_embed (e.g., camera_data for 3D embeddings)
+            pos_kwargs = camera_data if camera_data is not None else {}
+            
+            # Handle shape conversion for spatial (4D) positional embeddings
+            needs_reshape = False
+            if features.ndim == 3:
+                # Check if pos_embed expects 4D input
+                expects_4d = (
+                    isinstance(self.pos_embed, utils.CoordinatePositionEmbed) or
+                    (hasattr(self.pos_embed, 'expected_dims') and self.pos_embed.expected_dims == 4)
+                )
+                if expects_4d:
+                    needs_reshape = True
+                    B, N, D = features.shape
+                    H = W = int(N ** 0.5)
+                    assert H * W == N, f"Cannot reshape {N} patches to square grid"
+                    features = features.transpose(1, 2).view(B, D, H, W)
+            
+            features = self.pos_embed(features, **pos_kwargs)
+            
+            # Reshape back to 3D if needed
+            if needs_reshape:
+                features = features.flatten(2).transpose(1, 2)
+            
             backbone_features = features.clone()
 
         if self.spatial_flatten:
