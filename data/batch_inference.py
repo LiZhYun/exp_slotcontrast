@@ -24,9 +24,9 @@ from slotcontrast.visualizations import color_map, draw_segmentation_masks_on_im
 from data.ytvis import YTVOS
 
 
-def load_model_from_checkpoint(checkpoint_path: str, config_path: str, device: str = 'cuda'):
+def load_model_from_checkpoint(checkpoint_path: str, config_path: str, config_overrides: Optional[List[str]] = None, device: str = 'cuda'):
     """Load model from checkpoint with config."""
-    config = configuration.load_config(config_path)
+    config = configuration.load_config(config_path, overrides=config_overrides)
     model = models.build(config.model, config.optimizer)
     checkpoint = torch.load(checkpoint_path, map_location=torch.device(device))
     model.load_state_dict(checkpoint["state_dict"], strict=False)
@@ -354,6 +354,11 @@ def main():
         default="cuda" if torch.cuda.is_available() else "cpu",
         help="Device to run on"
     )
+    parser.add_argument(
+        "config_overrides",
+        nargs="*",
+        help="Config overrides in key=value format (e.g., model.encoder.use_pos_embed=true)"
+    )
     
     args = parser.parse_args()
     
@@ -380,13 +385,22 @@ def main():
     
     # Load model
     print(f"Loading model from {args.checkpoint}...")
-    model, config = load_model_from_checkpoint(args.checkpoint, args.config, args.device)
+    model, config = load_model_from_checkpoint(args.checkpoint, args.config, args.config_overrides, args.device)
     model.initializer.n_slots = args.n_slots
+    
+    # Get input_size from config (with fallback chain)
+    input_size = 224
+    if hasattr(config, 'dataset') and config.dataset is not None:
+        if hasattr(config.dataset, 'val_pipeline') and config.dataset.val_pipeline is not None:
+            if hasattr(config.dataset.val_pipeline, 'transforms') and config.dataset.val_pipeline.transforms is not None:
+                input_size = config.dataset.val_pipeline.transforms.get('input_size', 224)
+    
+    print(f"Using input_size: {input_size}")
     
     # Create transform config
     transform_config = OmegaConf.create({
         'dataset_type': 'video',
-        'input_size': config.dataset.get('input_size', 224)
+        'input_size': input_size
     })
     
     # Get video directories

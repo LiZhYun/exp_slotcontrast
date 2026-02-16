@@ -1322,7 +1322,8 @@ class HungarianPredictor(nn.Module):
 
     def __init__(self, dim: int, similarity: str = "cosine", pre_match: bool = False,
                  use_hybrid_cost: bool = False, lambda_pos: float = 1.0,
-                 lambda_angular: float = 0.1, use_iterative: bool = False, **kwargs):
+                 lambda_angular: float = 0.1, use_velocity: bool = False,
+                 velocity_ema: float = 0.5, use_iterative: bool = False, **kwargs):
         """
         Args:
             dim: Slot dimension (for interface compatibility, not used internally)
@@ -1331,6 +1332,8 @@ class HungarianPredictor(nn.Module):
             use_hybrid_cost: Enable hybrid cost combining appearance, position, angular
             lambda_pos: Weight for position (centroid distance) cost
             lambda_angular: Weight for angular (motion consistency) cost
+            use_velocity: Enable velocity prediction for position matching
+            velocity_ema: EMA weight for velocity smoothing (higher = more smoothing)
             use_iterative: Use iterative mutual-best matching instead of Hungarian
         """
         super().__init__()
@@ -1340,6 +1343,8 @@ class HungarianPredictor(nn.Module):
         self.use_hybrid_cost = use_hybrid_cost
         self.lambda_pos = lambda_pos
         self.lambda_angular = lambda_angular
+        self.use_velocity = use_velocity
+        self.velocity_ema = velocity_ema
         self.use_iterative = use_iterative
         self._prev_slots: Optional[torch.Tensor] = None
         self._prev_greedy: Optional[torch.Tensor] = None  # For greedy→greedy matching
@@ -1347,6 +1352,7 @@ class HungarianPredictor(nn.Module):
         # Hybrid cost state
         self._prev_centroids: Optional[torch.Tensor] = None
         self._prev_prev_centroids: Optional[torch.Tensor] = None
+        self._velocities: Optional[torch.Tensor] = None  # [B, N, 2] velocity vectors
 
     def reset(self):
         """Reset state for new video sequence."""
@@ -1355,6 +1361,7 @@ class HungarianPredictor(nn.Module):
         self._last_match_indices = None
         self._prev_centroids = None
         self._prev_prev_centroids = None
+        self._velocities = None
     
     def get_last_match_indices(self) -> Optional[torch.Tensor]:
         """Return last matching indices [B, N] where indices[b, i] = source slot for position i."""
@@ -1455,6 +1462,16 @@ class HungarianPredictor(nn.Module):
         self._prev_slots = reordered_slots.detach()
         self._last_match_indices = indices
         
+        # Update velocity: V_t = ema * V_t-1 + (1-ema) * (P_t - P_t-1)
+        if self.use_velocity and centroids is not None and prev_centroids is not None:
+            B = centroids.shape[0]
+            matched_centroids = torch.stack([centroids[b, indices[b]] for b in range(B)], dim=0)
+            new_v = matched_centroids - prev_centroids
+            if self._velocities is not None:
+                self._velocities = self.velocity_ema * self._velocities + (1 - self.velocity_ema) * new_v
+            else:
+                self._velocities = new_v
+        
         # Update hybrid cost state history
         if self.use_hybrid_cost:
             self._prev_prev_centroids = self._prev_centroids
@@ -1504,10 +1521,14 @@ class HungarianPredictor(nn.Module):
         
         cost_matrix = appearance_cost
         
-        # 2. Position cost (centroid distance)
+        # 2. Position cost (centroid distance with velocity prediction)
         if self.lambda_pos > 0 and prev_centroids is not None and curr_centroids is not None:
+            # Predict position: P_hat = P_t-1 + V_t-1
+            ref_centroids = prev_centroids
+            if self.use_velocity and self._velocities is not None:
+                ref_centroids = prev_centroids + self._velocities
             # [B, N, 1, 2] - [B, 1, N, 2] -> [B, N, N]
-            spatial_diff = prev_centroids.unsqueeze(2) - curr_centroids.unsqueeze(1)
+            spatial_diff = ref_centroids.unsqueeze(2) - curr_centroids.unsqueeze(1)
             spatial_cost = spatial_diff.norm(dim=-1)  # [B, N, N]
             # Normalize by sqrt(2) (max distance for normalized [0,1] coords)
             spatial_cost = spatial_cost / (2 ** 0.5)

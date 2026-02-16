@@ -156,8 +156,9 @@ model:
     # === Hybrid Cost Matching (Optional - requires GreedyFeatureInit) ===
     use_hybrid_cost: false      # Enable hybrid cost matching
     lambda_pos: 1.0            # Weight for position (centroid distance) cost
-    lambda_angular: 0.1        # Weight for angular (motion consistency) cost
-
+    lambda_angular: 0.0        # Weight for angular (motion consistency) cost
+    use_velocity: true
+    velocity_ema: 0.5    # 0=no smoothing, 1=constant velocity
     use_iterative: false
 
 val_metrics:
