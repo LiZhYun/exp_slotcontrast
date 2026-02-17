@@ -185,7 +185,7 @@ model:
     use_kalman: false
     kalman_process_noise: 0.03
     lambda_pos: 1.0            # Weight for position (centroid distance) cost
-    lambda_angular: 0.0        # Weight for angular (motion consistency) cost
+    lambda_angular: 1.0        # Weight for angular (motion consistency) cost
     lambda_iou: 1.0      # Feature-independent spatial matching
     use_velocity: true
     velocity_ema: 0.5    # 0=no smoothing, 1=constant velocity

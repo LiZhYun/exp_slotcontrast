@@ -1619,13 +1619,15 @@ class HungarianPredictor(nn.Module):
         
         # 4. IoU cost (mask overlap - feature-independent spatial matching)
         if self.lambda_iou > 0 and prev_masks is not None and curr_masks is not None:
-            # prev_masks: [B, N, H, W], curr_masks: [B, N, H, W]
-            prev_m = prev_masks.unsqueeze(2)  # [B, N, 1, H, W]
-            curr_m = curr_masks.unsqueeze(1)  # [B, 1, N, H, W]
-            intersection = (prev_m * curr_m).sum(dim=(-2, -1))  # [B, N, N]
-            union = (prev_m + curr_m - prev_m * curr_m).sum(dim=(-2, -1))  # [B, N, N]
-            iou = intersection / (union + 1e-8)  # [B, N, N]
-            cost_matrix = cost_matrix + self.lambda_iou * (1 - iou)
+            # Check dimensions match (masks might have different N than slots)
+            if prev_masks.shape[1] == N and curr_masks.shape[1] == N:
+                # prev_masks: [B, N, H, W], curr_masks: [B, N, H, W]
+                prev_m = prev_masks.unsqueeze(2)  # [B, N, 1, H, W]
+                curr_m = curr_masks.unsqueeze(1)  # [B, 1, N, H, W]
+                intersection = (prev_m * curr_m).sum(dim=(-2, -1))  # [B, N, N]
+                union = (prev_m + curr_m - prev_m * curr_m).sum(dim=(-2, -1))  # [B, N, N]
+                iou = intersection / (union + 1e-8)  # [B, N, N]
+                cost_matrix = cost_matrix + self.lambda_iou * (1 - iou)
         
         return cost_matrix
 
