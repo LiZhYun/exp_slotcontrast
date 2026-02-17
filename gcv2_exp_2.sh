@@ -7,15 +7,8 @@ CONFIG_FILE="configs/slotcontrast/ytvis2021.yaml"
 CONFIGS=(
     # # ytvis2021
     # # DINO v2-base
-    # "42 gcv2_dinov2_block12 GreedyFeatureInit per_frame networks.HungarianPredictor false vit_block12 vit_block12 vit_base_patch14_dinov2 1369 518 768 false utils.LearnedPositionEmbed"
-    # "42 gcv2_dinov2_output GreedyFeatureInit per_frame networks.HungarianPredictor false vit_output vit_output vit_base_patch14_dinov2 1369 518 768 false"
-    # "42 gcv2_learnable_pos_emb_dinov2_block12 GreedyFeatureInit per_frame networks.HungarianPredictor true vit_block12 vit_block12 vit_base_patch14_dinov2 1369 518 768 false"
-    # "42 gcv2_learnable_pos_emb_dinov2_output GreedyFeatureInit per_frame networks.HungarianPredictor true vit_output  vit_output vit_base_patch14_dinov2 1369 518 768 false"
-    # # "42 gcv2_dinov2_block12_norm GreedyFeatureInit per_frame networks.HungarianPredictor false vit_block12 vit_block12 vit_base_patch14_dinov2 1369 518 768 true"
-    # # "42 gcv2_dinov2_output_norm GreedyFeatureInit per_frame networks.HungarianPredictor false vit_output vit_output vit_base_patch14_dinov2 1369 518 768 true"
-    # # "42 gcv2_learnable_pos_emb_dinov2_block12_norm GreedyFeatureInit per_frame networks.HungarianPredictor true vit_block12 vit_block12 vit_base_patch14_dinov2 1369 518 768 true"
-    # # "42 gcv2_learnable_pos_emb_dinov2_output_norm GreedyFeatureInit per_frame networks.HungarianPredictor true vit_output  vit_output vit_base_patch14_dinov2 1369 518 768 true"
-    # "42 gcv2_learnable_pos_emb_dinov2_block12 GreedyFeatureInit per_frame networks.HungarianPredictor true vit_block12 vit_block12 vit_base_patch14_dinov2 1369 518 768 false utils.LearnedPositionEmbed"
+    "42 gcv2_dinov2_block12 GreedyFeatureInit per_frame networks.HungarianPredictor false vit_block12 vit_block12 vit_base_patch14_dinov2 1369 518 768 utils.LearnedPositionEmbed true"
+    "42 gcv2_learnable_pos_emb_dinov2_block12 GreedyFeatureInit per_frame networks.HungarianPredictor true vit_block12 vit_block12 vit_base_patch14_dinov2 1369 518 768 utils.LearnedPositionEmbed true"
     # "42 gcv2_coordinate_pos_emb_dinov2_block12 GreedyFeatureInit per_frame networks.HungarianPredictor true vit_block12 vit_block12 vit_base_patch14_dinov2 1369 518 768 false utils.CoordinatePositionEmbed"
     # "42 gcv2_rotary_pos_emb_dinov2_block12 GreedyFeatureInit per_frame networks.HungarianPredictor true vit_block12 vit_block12 vit_base_patch14_dinov2 1369 518 768 false utils.RotaryPositionEmbed"
     
@@ -51,7 +44,7 @@ CONFIGS=(
     
     # # DINO v3-large
     # "42 gcv2_learnable_pos_emb_dinov3_large_block18 GreedyFeatureInit per_frame networks.HungarianPredictor true vit_block18 vit_block18 vit_large_patch16_dinov3.lvd1689m 1024 512 1024 false"
-    "42 gcv2_dinov3_large_block18 GreedyFeatureInit per_frame networks.HungarianPredictor false vit_block18 vit_block18 vit_large_patch16_dinov3.lvd1689m 1024 512 1024 false utils.LearnedPositionEmbed"
+    # "42 gcv2_dinov3_large_block18 GreedyFeatureInit per_frame networks.HungarianPredictor false vit_block18 vit_block18 vit_large_patch16_dinov3.lvd1689m 1024 512 1024 false utils.LearnedPositionEmbed"
     # # "42 gcv2_learnable_pos_emb_dinov3_large_block24 GreedyFeatureInit per_frame networks.HungarianPredictor true vit_block24 vit_block24 vit_large_patch16_dinov3.lvd1689m 1024 512 1024 false"
     # # "42 gcv2_dinov3_large_block24 GreedyFeatureInit per_frame networks.HungarianPredictor false vit_block24 vit_block24 vit_large_patch16_dinov3.lvd1689m 1024 512 1024 false"
     # # "42 gcv2_learnable_pos_emb_dinov3_large_output GreedyFeatureInit per_frame networks.HungarianPredictor true vit_output vit_output vit_large_patch16_dinov3.lvd1689m 1024 512 1024 false"
@@ -111,7 +104,7 @@ CONFIGS=(
     # "42 ytvis2021_baseline_rotary_pos_emb_dinov3_block12 FixedLearnedInit first_frame networks.TransformerEncoder true vit_block12 vit_block12 vit_base_patch16_dinov3 1024 512 768 false utils.RotaryPositionEmbed"
     
     # # DINO v3-large
-    "42 ytvis2021_baseline_dinov3_large_block18 FixedLearnedInit first_frame networks.TransformerEncoder false vit_block18 vit_block18 vit_large_patch16_dinov3.lvd1689m 1024 512 1024 false utils.LearnedPositionEmbed"
+    # "42 ytvis2021_baseline_dinov3_large_block18 FixedLearnedInit first_frame networks.TransformerEncoder false vit_block18 vit_block18 vit_large_patch16_dinov3.lvd1689m 1024 512 1024 false utils.LearnedPositionEmbed"
     # # "42 baseline_dinov3_large_block24 FixedLearnedInit first_frame networks.TransformerEncoder false vit_block24 vit_block24 vit_large_patch16_dinov3.lvd1689m 1024 512 1024 false"
     # # "42 baseline_dinov3_large_output FixedLearnedInit first_frame networks.TransformerEncoder false vit_output vit_output vit_large_patch16_dinov3.lvd1689m 1024 512 1024 false"
     # "42 baseline_learnable_pos_emb_dinov3_large_block18 FixedLearnedInit first_frame networks.TransformerEncoder true vit_block18 vit_block18 vit_large_patch16_dinov3.lvd1689m 1024 512 1024 false"
@@ -253,7 +246,7 @@ CONFIGS=(
     )
     
 for config in "${CONFIGS[@]}"; do
-    read -r SEED exp_name init_name init_mode predictor use_pos_embed features main_features_key DINO_MODEL NUM_PATCHES input_size FEAT_DIM normalize_features pos_embed <<< "$config"
+    read -r SEED exp_name init_name init_mode predictor use_pos_embed features main_features_key DINO_MODEL NUM_PATCHES input_size FEAT_DIM pos_embed use_hybrid_cost <<< "$config"
 
     echo "Submitting: $exp_name with config: $CONFIG_FILE"
     
@@ -262,11 +255,11 @@ for config in "${CONFIGS[@]}"; do
         "model.initializer.name=${init_name}" \
         "model.initializer.init_mode=${init_mode}" \
         "model.predictor.name=${predictor}" \
+        "model.predictor.use_hybrid_cost=${use_hybrid_cost}" \
         "model.encoder.use_pos_embed=${use_pos_embed}" \
         "model.encoder.pos_embed.name=${pos_embed}" \
         "model.encoder.backbone.features=${features}" \
         "model.encoder.main_features_key=${main_features_key}" \
-        "model.encoder.normalize_features=${normalize_features}" \
         "globals.DINO_MODEL=${DINO_MODEL}" \
         "globals.NUM_PATCHES=${NUM_PATCHES}" \
         "globals.FEAT_DIM=${FEAT_DIM}" \
