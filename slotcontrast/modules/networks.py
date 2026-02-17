@@ -1619,6 +1619,14 @@ class HungarianPredictor(nn.Module):
         
         # 4. IoU cost (mask overlap - feature-independent spatial matching)
         if self.lambda_iou > 0 and prev_masks is not None and curr_masks is not None:
+            # Reshape 3D masks [B, N, n_patches] to 4D [B, N, H, W] if needed
+            # (SlotAttention returns 3D masks, but IoU needs pairwise spatial overlap)
+            if prev_masks.ndim == 3:
+                h = int(prev_masks.shape[-1] ** 0.5)
+                prev_masks = prev_masks.view(prev_masks.shape[0], prev_masks.shape[1], h, h)
+            if curr_masks.ndim == 3:
+                h = int(curr_masks.shape[-1] ** 0.5)
+                curr_masks = curr_masks.view(curr_masks.shape[0], curr_masks.shape[1], h, h)
             # Check dimensions match (masks might have different N than slots)
             if prev_masks.shape[1] == N and curr_masks.shape[1] == N:
                 # prev_masks: [B, N, H, W], curr_masks: [B, N, H, W]
