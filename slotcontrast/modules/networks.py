@@ -1322,8 +1322,10 @@ class HungarianPredictor(nn.Module):
 
     def __init__(self, dim: int, similarity: str = "cosine", pre_match: bool = False,
                  use_hybrid_cost: bool = False, lambda_pos: float = 1.0,
-                 lambda_angular: float = 0.1, use_velocity: bool = False,
-                 velocity_ema: float = 0.5, use_iterative: bool = False, **kwargs):
+                 lambda_angular: float = 0.1, lambda_iou: float = 0.0,
+                 use_velocity: bool = False, velocity_ema: float = 0.5,
+                 use_kalman: bool = False, kalman_process_noise: float = 0.03,
+                 use_iterative: bool = False, **kwargs):
         """
         Args:
             dim: Slot dimension (for interface compatibility, not used internally)
@@ -1332,8 +1334,11 @@ class HungarianPredictor(nn.Module):
             use_hybrid_cost: Enable hybrid cost combining appearance, position, angular
             lambda_pos: Weight for position (centroid distance) cost
             lambda_angular: Weight for angular (motion consistency) cost
-            use_velocity: Enable velocity prediction for position matching
+            lambda_iou: Weight for IoU (mask overlap) cost
+            use_velocity: Enable velocity prediction for position matching (simple EMA)
             velocity_ema: EMA weight for velocity smoothing (higher = more smoothing)
+            use_kalman: Enable Kalman filter with adaptive uncertainty (overrides use_velocity)
+            kalman_process_noise: Process noise for Kalman (motion uncertainty growth rate)
             use_iterative: Use iterative mutual-best matching instead of Hungarian
         """
         super().__init__()
@@ -1343,8 +1348,11 @@ class HungarianPredictor(nn.Module):
         self.use_hybrid_cost = use_hybrid_cost
         self.lambda_pos = lambda_pos
         self.lambda_angular = lambda_angular
+        self.lambda_iou = lambda_iou
         self.use_velocity = use_velocity
         self.velocity_ema = velocity_ema
+        self.use_kalman = use_kalman
+        self.kalman_process_noise = kalman_process_noise
         self.use_iterative = use_iterative
         self._prev_slots: Optional[torch.Tensor] = None
         self._prev_greedy: Optional[torch.Tensor] = None  # For greedy→greedy matching
@@ -1352,7 +1360,12 @@ class HungarianPredictor(nn.Module):
         # Hybrid cost state
         self._prev_centroids: Optional[torch.Tensor] = None
         self._prev_prev_centroids: Optional[torch.Tensor] = None
-        self._velocities: Optional[torch.Tensor] = None  # [B, N, 2] velocity vectors
+        self._velocities: Optional[torch.Tensor] = None  # [B, N, 2] velocity vectors (EMA mode)
+        self._prev_masks: Optional[torch.Tensor] = None  # [B, N, H, W] previous masks
+        # Kalman state (simplified: position + velocity + scalar uncertainty)
+        self._kalman_pos: Optional[torch.Tensor] = None  # [B, N, 2]
+        self._kalman_vel: Optional[torch.Tensor] = None  # [B, N, 2]
+        self._kalman_uncertainty: Optional[torch.Tensor] = None  # [B, N]
 
     def reset(self):
         """Reset state for new video sequence."""
@@ -1362,6 +1375,10 @@ class HungarianPredictor(nn.Module):
         self._prev_centroids = None
         self._prev_prev_centroids = None
         self._velocities = None
+        self._prev_masks = None
+        self._kalman_pos = None
+        self._kalman_vel = None
+        self._kalman_uncertainty = None
     
     def get_last_match_indices(self) -> Optional[torch.Tensor]:
         """Return last matching indices [B, N] where indices[b, i] = source slot for position i."""
@@ -1398,6 +1415,8 @@ class HungarianPredictor(nn.Module):
         centroids: Optional[torch.Tensor] = None,
         prev_centroids: Optional[torch.Tensor] = None,
         prev_prev_centroids: Optional[torch.Tensor] = None,
+        masks: Optional[torch.Tensor] = None,
+        prev_masks: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """
         Args:
@@ -1408,6 +1427,8 @@ class HungarianPredictor(nn.Module):
             centroids: [B, N, 2] current slot centroids (for hybrid cost)
             prev_centroids: [B, N, 2] previous centroids (for hybrid cost)
             prev_prev_centroids: [B, N, 2] centroids from t-2 (for angular cost)
+            masks: [B, N, H, W] current slot masks (for IoU cost)
+            prev_masks: [B, N, H, W] previous masks (for IoU cost)
         
         Returns:
             Reordered slots to match previous frame's slot ordering [B, N, D]
@@ -1452,18 +1473,43 @@ class HungarianPredictor(nn.Module):
                 prev_centroids = self._prev_centroids
             if prev_prev_centroids is None:
                 prev_prev_centroids = self._prev_prev_centroids
+            if prev_masks is None:
+                prev_masks = self._prev_masks
         
         reordered_slots, indices = self._hungarian_match(
             reference_slots, slots, return_indices=True,
             prev_centroids=prev_centroids if self.use_hybrid_cost else None,
             curr_centroids=centroids if self.use_hybrid_cost else None,
             prev_prev_centroids=prev_prev_centroids if self.use_hybrid_cost else None,
+            prev_masks=prev_masks if self.use_hybrid_cost else None,
+            curr_masks=masks if self.use_hybrid_cost else None,
         )
         self._prev_slots = reordered_slots.detach()
         self._last_match_indices = indices
         
-        # Update velocity: V_t = ema * V_t-1 + (1-ema) * (P_t - P_t-1)
-        if self.use_velocity and centroids is not None and prev_centroids is not None:
+        # Update Kalman filter or simple velocity
+        if self.use_kalman and centroids is not None and prev_centroids is not None:
+            B = centroids.shape[0]
+            matched_centroids = torch.stack([centroids[b, indices[b]] for b in range(B)], dim=0)
+            
+            if self._kalman_pos is None:
+                # Initialize Kalman state
+                self._kalman_pos = prev_centroids.detach()
+                self._kalman_vel = (matched_centroids - prev_centroids).detach()
+                self._kalman_uncertainty = torch.ones(B, centroids.shape[1], device=centroids.device) * 0.1
+            else:
+                # Predict step
+                predicted_pos = self._kalman_pos + self._kalman_vel
+                self._kalman_uncertainty = self._kalman_uncertainty + self.kalman_process_noise
+                
+                # Update step
+                innovation = matched_centroids - predicted_pos
+                kalman_gain = self._kalman_uncertainty / (self._kalman_uncertainty + 0.1)
+                self._kalman_pos = predicted_pos + kalman_gain.unsqueeze(-1) * innovation
+                self._kalman_vel = self._kalman_vel + 0.5 * kalman_gain.unsqueeze(-1) * innovation
+                self._kalman_uncertainty = (1 - kalman_gain) * self._kalman_uncertainty
+                
+        elif self.use_velocity and centroids is not None and prev_centroids is not None:
             B = centroids.shape[0]
             matched_centroids = torch.stack([centroids[b, indices[b]] for b in range(B)], dim=0)
             new_v = matched_centroids - prev_centroids
@@ -1476,6 +1522,7 @@ class HungarianPredictor(nn.Module):
         if self.use_hybrid_cost:
             self._prev_prev_centroids = self._prev_centroids
             self._prev_centroids = centroids.detach() if centroids is not None else None
+            self._prev_masks = masks.detach() if masks is not None else None
         
         # Reorder existence_mask if provided
         if existence_mask is not None:
@@ -1494,8 +1541,10 @@ class HungarianPredictor(nn.Module):
         prev_centroids: Optional[torch.Tensor] = None,
         curr_centroids: Optional[torch.Tensor] = None,
         prev_prev_centroids: Optional[torch.Tensor] = None,
+        prev_masks: Optional[torch.Tensor] = None,
+        curr_masks: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        """Compute hybrid cost matrix combining appearance, position, and angular costs.
+        """Compute hybrid cost matrix combining appearance, position, angular, and IoU costs.
         
         Args:
             prev_slots: [B, N, D]
@@ -1503,35 +1552,51 @@ class HungarianPredictor(nn.Module):
             prev_centroids: [B, N, 2] previous centroids
             curr_centroids: [B, N, 2] current centroids
             prev_prev_centroids: [B, N, 2] centroids from t-2 for angular cost
+            prev_masks: [B, N, H, W] previous masks
+            curr_masks: [B, N, H, W] current masks
         
         Returns:
             cost_matrix: [B, N, N] hybrid cost matrix
         """
         B, N, D = curr_slots.shape
         
-        # 1. Appearance cost (base cost - always computed)
+        # 1. Appearance cost (base cost - always computed, normalized to [0, 1])
         if self.similarity == "cosine":
             prev_norm = F.normalize(prev_slots, dim=-1)
             curr_norm = F.normalize(curr_slots, dim=-1)
             sim_matrix = torch.bmm(prev_norm, curr_norm.transpose(1, 2))
-            appearance_cost = 1 - sim_matrix  # [B, N, N]
-        else:  # L2
+            # Normalize: cosine_sim ∈ [-1, 1] → cost ∈ [0, 1]
+            appearance_cost = (1 - sim_matrix) / 2  # [B, N, N]
+        else:  # L2 distance
             diff = prev_slots.unsqueeze(2) - curr_slots.unsqueeze(1)
-            appearance_cost = diff.norm(dim=-1)
+            distance = diff.norm(dim=-1)
+            # Normalize using RBF kernel: scale by sqrt(2*D) for typical feature scale
+            # This maps [0, ∞) → [0, 1] smoothly
+            scale = (2 * D) ** 0.5
+            appearance_cost = 1 - torch.exp(-distance / scale)
         
         cost_matrix = appearance_cost
         
-        # 2. Position cost (centroid distance with velocity prediction)
+        # 2. Position cost (centroid distance with velocity/Kalman prediction)
         if self.lambda_pos > 0 and prev_centroids is not None and curr_centroids is not None:
-            # Predict position: P_hat = P_t-1 + V_t-1
             ref_centroids = prev_centroids
-            if self.use_velocity and self._velocities is not None:
+            uncertainty_weight = 1.0
+            
+            if self.use_kalman and self._kalman_pos is not None:
+                # Kalman prediction: position + velocity
+                ref_centroids = self._kalman_pos + self._kalman_vel
+                # Adaptive weighting: high uncertainty → less trust in position
+                uncertainty_weight = 1.0 + self._kalman_uncertainty.unsqueeze(2)  # [B, N, 1]
+            elif self.use_velocity and self._velocities is not None:
                 ref_centroids = prev_centroids + self._velocities
+            
             # [B, N, 1, 2] - [B, 1, N, 2] -> [B, N, N]
             spatial_diff = ref_centroids.unsqueeze(2) - curr_centroids.unsqueeze(1)
             spatial_cost = spatial_diff.norm(dim=-1)  # [B, N, N]
             # Normalize by sqrt(2) (max distance for normalized [0,1] coords)
             spatial_cost = spatial_cost / (2 ** 0.5)
+            # Apply uncertainty weighting (Kalman mode only)
+            spatial_cost = spatial_cost * uncertainty_weight
             cost_matrix = cost_matrix + self.lambda_pos * spatial_cost
         
         # 3. Angular cost (motion consistency)
@@ -1548,8 +1613,19 @@ class HungarianPredictor(nn.Module):
             curr_motion_norm = F.normalize(curr_motion, dim=-1, eps=1e-8)  # [B, N, N, 2]
             # Dot product: [B, N, 1, 2] * [B, N, N, 2] -> [B, N, N]
             cosine_sim = (prev_motion_norm.unsqueeze(2) * curr_motion_norm).sum(dim=-1)
-            angular_cost = 1 - cosine_sim  # [B, N, N]
+            # Normalize: cosine_sim ∈ [-1, 1] → cost ∈ [0, 1]
+            angular_cost = (1 - cosine_sim) / 2  # [B, N, N]
             cost_matrix = cost_matrix + self.lambda_angular * angular_cost
+        
+        # 4. IoU cost (mask overlap - feature-independent spatial matching)
+        if self.lambda_iou > 0 and prev_masks is not None and curr_masks is not None:
+            # prev_masks: [B, N, H, W], curr_masks: [B, N, H, W]
+            prev_m = prev_masks.unsqueeze(2)  # [B, N, 1, H, W]
+            curr_m = curr_masks.unsqueeze(1)  # [B, 1, N, H, W]
+            intersection = (prev_m * curr_m).sum(dim=(-2, -1))  # [B, N, N]
+            union = (prev_m + curr_m - prev_m * curr_m).sum(dim=(-2, -1))  # [B, N, N]
+            iou = intersection / (union + 1e-8)  # [B, N, N]
+            cost_matrix = cost_matrix + self.lambda_iou * (1 - iou)
         
         return cost_matrix
 
@@ -1558,6 +1634,8 @@ class HungarianPredictor(nn.Module):
         prev_centroids: Optional[torch.Tensor] = None,
         curr_centroids: Optional[torch.Tensor] = None,
         prev_prev_centroids: Optional[torch.Tensor] = None,
+        prev_masks: Optional[torch.Tensor] = None,
+        curr_masks: Optional[torch.Tensor] = None,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         """Iterative mutual-best matching with Hungarian fallback.
         
@@ -1582,7 +1660,8 @@ class HungarianPredictor(nn.Module):
         # Compute cost matrix (reuse existing logic)
         if self.use_hybrid_cost:
             cost_matrix = self._compute_hybrid_cost(
-                prev_slots, curr_slots, prev_centroids, curr_centroids, prev_prev_centroids
+                prev_slots, curr_slots, prev_centroids, curr_centroids, prev_prev_centroids,
+                prev_masks, curr_masks
             )
         else:
             if self.similarity == "cosine":
@@ -1685,6 +1764,8 @@ class HungarianPredictor(nn.Module):
         prev_centroids: Optional[torch.Tensor] = None,
         curr_centroids: Optional[torch.Tensor] = None,
         prev_prev_centroids: Optional[torch.Tensor] = None,
+        prev_masks: Optional[torch.Tensor] = None,
+        curr_masks: Optional[torch.Tensor] = None,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         """Apply matching to align curr_slots with prev_slots ordering.
         
@@ -1704,7 +1785,8 @@ class HungarianPredictor(nn.Module):
         if self.use_iterative:
             return self._iterative_match(
                 prev_slots, curr_slots, return_indices,
-                prev_centroids, curr_centroids, prev_prev_centroids
+                prev_centroids, curr_centroids, prev_prev_centroids,
+                prev_masks, curr_masks
             )
         
         # Standard Hungarian matching
@@ -1717,7 +1799,7 @@ class HungarianPredictor(nn.Module):
         if self.use_hybrid_cost:
             cost_matrix = self._compute_hybrid_cost(
                 prev_slots, curr_slots, prev_centroids, curr_centroids,
-                prev_prev_centroids
+                prev_prev_centroids, prev_masks, curr_masks
             )
         else:
             # Original cost computation (backward compatible)

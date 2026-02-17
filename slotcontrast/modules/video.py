@@ -42,6 +42,9 @@ class LatentProcessor(nn.Module):
             self.first_step_corrector_args = first_step_corrector_args
         else:
             self.first_step_corrector_args = None
+        
+        # Cache previous masks for IoU cost in HungarianPredictor
+        self._prev_masks: Optional[torch.Tensor] = None
 
     def forward(
         self, state: torch.Tensor, inputs: Optional[torch.Tensor], time_step: Optional[int] = None,
@@ -55,34 +58,34 @@ class LatentProcessor(nn.Module):
         # 1. CORRECT: Update slots based on current frame features
         if self.skip_corrector:
             # Bypass slot attention - use input state directly
-            corrector_output = {"slots": state, "masks": None}
+            corrector_output = {"slots": state}
             updated_state = state
-            corrector_masks = None
+            curr_masks = None
         elif inputs is not None:
             if time_step == 0 and self.first_step_corrector_args:
                 corrector_output = self.corrector(state, inputs, **self.first_step_corrector_args)
             else:
                 corrector_output = self.corrector(state, inputs)
             updated_state = corrector_output[self.state_key]
-            corrector_masks = corrector_output.get("masks")
+            curr_masks = corrector_output.get("masks")
         else:
             # Run predictor without updating on current inputs
             corrector_output = None
             updated_state = state
-            corrector_masks = None
+            curr_masks = None
 
         # 2. ENCODE MEMORY (if components exist)
         if (
             self.memory_encoder is not None
             and self.memory_bank is not None
             and time_step is not None
-            and corrector_masks is not None
+            and curr_masks is not None
         ):
             # Encode current frame into memory
             memory_encoding = self.memory_encoder(
                 slots=updated_state.detach(),
                 features=inputs.detach(),
-                masks=corrector_masks.detach(),
+                masks=curr_masks.detach(),
             )
 
             # Store in memory bank
@@ -90,7 +93,7 @@ class LatentProcessor(nn.Module):
                 frame_idx=time_step,
                 slots=updated_state.detach(),
                 features=inputs.detach(),
-                masks=corrector_masks.detach(),
+                masks=curr_masks.detach(),
                 **memory_encoding
             )
 
@@ -108,11 +111,11 @@ class LatentProcessor(nn.Module):
         curr_centroids = None
         if self.predictor and hasattr(self.predictor, 'use_hybrid_cost') and self.predictor.use_hybrid_cost:
             # Compute centroids from corrector masks
-            if corrector_masks is not None:
+            if curr_masks is not None:
                 from slotcontrast.modules.initializers import compute_slot_centroids_from_masks
                 patch_h = int(inputs.shape[1] ** 0.5)
                 curr_centroids = compute_slot_centroids_from_masks(
-                    corrector_masks, patch_h, patch_h, normalize=True
+                    curr_masks, patch_h, patch_h, normalize=True
                 )
         
         if self.predictor and not self.skip_predictor:
@@ -144,14 +147,14 @@ class LatentProcessor(nn.Module):
                 # HungarianPredictor with existence_mask: reorder both slots and mask
                 result = self.predictor(
                     updated_state, existence_mask=existence_mask, return_weights=True,
-                    centroids=curr_centroids
+                    centroids=curr_centroids, masks=curr_masks, prev_masks=self._prev_masks
                 )
                 predicted_state, out_existence_mask = result[0], result[1]
             elif is_hungarian:
                 # HungarianPredictor uses internal state, just pass slots
                 result = self.predictor(
                     updated_state, return_weights=self.use_ttt3r,
-                    centroids=curr_centroids
+                    centroids=curr_centroids, masks=curr_masks, prev_masks=self._prev_masks
                 )
             else:
                 result = self.predictor(updated_state, return_weights=self.use_ttt3r)
@@ -170,6 +173,10 @@ class LatentProcessor(nn.Module):
                 )
         else:
             predicted_state = updated_state
+        
+        # Cache current masks for next frame's IoU cost
+        if curr_masks is not None:
+            self._prev_masks = curr_masks.detach()
 
         # Determine output state: use reordered slots if Hungarian post-match
         # (Hungarian post-match reorders slots to match temporal identity, so decoder should use reordered)
