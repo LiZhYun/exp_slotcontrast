@@ -235,7 +235,7 @@ class SlotMixerDecoder(nn.Module):
             layers.append(self.output_transform)
         utils.init_parameters(layers, "xavier_uniform")
 
-    def forward(self, slots: torch.Tensor) -> Dict[str, torch.Tensor]:
+    def forward(self, slots: torch.Tensor, existence_mask: Optional[torch.Tensor] = None) -> Dict[str, torch.Tensor]:
         if not self.training and self.eval_output_size is not None:
             pos_emb = timm.layers.pos_embed.resample_abs_pos_embed(
                 self.pos_emb,
