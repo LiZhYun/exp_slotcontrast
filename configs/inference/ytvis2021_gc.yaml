@@ -158,7 +158,7 @@ model:
 
   predictor:
     # Standard predictor (no memory)
-    name: networks.TransformerEncoder # networks.TransformerEncoder, networks.HungarianPredictor, networks.HungarianMemoryMatcher
+    name: networks.HungarianPredictor # networks.TransformerEncoder, networks.HungarianPredictor, networks.HungarianMemoryMatcher
     dim: ${globals.SLOT_DIM}
     n_blocks: 1
     n_heads: 4
