@@ -29,6 +29,11 @@ CONFIGS=(
     # "baseline_w_contrast FixedLearnedInit first_frame networks.TransformerEncoder 2 43 2 3 local_consistency false 0.5"
     # "baseline_w_contrast FixedLearnedInit first_frame networks.TransformerEncoder 2 44 2 3 local_consistency false 0.5"
 
+    # #videosaur
+    # "videosaur_w_contrast FixedLearnedInit first_frame networks.TransformerEncoder 2 42 2 3 local_consistency false 0.5"
+    # "videosaur_w_contrast FixedLearnedInit first_frame networks.TransformerEncoder 2 43 2 3 local_consistency false 0.5"
+    # "videosaur_w_contrast FixedLearnedInit first_frame networks.TransformerEncoder 2 44 2 3 local_consistency false 0.5"
+
     # # rethinking slot init strategies
     # # slot init first frame with greedy
     # "first_frame_greedy_w_contrast GreedyFeatureInit first_frame networks.TransformerEncoder 2 42 2 3 local_consistency false 0.5"
@@ -126,37 +131,47 @@ CONFIGS=(
     # "baseline_w_contrast FixedLearnedInit first_frame networks.TransformerEncoder 1 43 2 3 local_consistency false 1.0"
     # "baseline_w_contrast FixedLearnedInit first_frame networks.TransformerEncoder 1 44 2 3 local_consistency false 1.0"
 
+    # #videosaur
+    # "videosaur_w_contrast FixedLearnedInit first_frame networks.TransformerEncoder 1 42 2 3 local_consistency false 1.0"
+    # "videosaur_w_contrast FixedLearnedInit first_frame networks.TransformerEncoder 1 43 2 3 local_consistency false 1.0"
+    # "videosaur_w_contrast FixedLearnedInit first_frame networks.TransformerEncoder 1 44 2 3 local_consistency false 1.0"
+
 
     # # movi_e
     # "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 42 2 3 local_consistency false 1.0"
     # "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 43 2 3 local_consistency false 1.0"
     # "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 44 2 3 local_consistency false 1.0"
 
-    # # TODO
-    "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 42 2 3 local_consistency false 0.5"
-    "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 43 2 3 local_consistency false 0.5"
-    "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 44 2 3 local_consistency false 0.5"
-    "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 42 2 3 local_consistency false 1.5"
-    "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 43 2 3 local_consistency false 1.5"
-    "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 44 2 3 local_consistency false 1.5"
+    # # # TODO
+    # "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 42 2 3 local_consistency false 0.5"
+    # "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 43 2 3 local_consistency false 0.5"
+    # "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 44 2 3 local_consistency false 0.5"
+    # "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 42 2 3 local_consistency false 1.5"
+    # "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 43 2 3 local_consistency false 1.5"
+    # "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 44 2 3 local_consistency false 1.5"
 
     # # one iteration
     # "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 42 1 1 local_consistency false 1.0"
     # "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 43 1 1 local_consistency false 1.0"
     # "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 44 1 1 local_consistency false 1.0"
 
-    # # TODO
-    "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 42 1 1 local_consistency false 0.5"
-    "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 43 1 1 local_consistency false 0.5"
-    "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 44 1 1 local_consistency false 0.5"
-    "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 42 1 1 local_consistency false 1.5"
-    "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 43 1 1 local_consistency false 1.5"
-    "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 44 1 1 local_consistency false 1.5"
+    # # # TODO
+    # "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 42 1 1 local_consistency false 0.5"
+    # "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 43 1 1 local_consistency false 0.5"
+    # "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 44 1 1 local_consistency false 0.5"
+    # "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 42 1 1 local_consistency false 1.5"
+    # "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 43 1 1 local_consistency false 1.5"
+    # "per_frame_greedy_local_hungarian_w_contrast GreedyFeatureInit per_frame networks.HungarianPredictor 1 44 1 1 local_consistency false 1.5"
 
     # # baseline
     # "baseline_w_contrast FixedLearnedInit first_frame networks.TransformerEncoder 1 42 2 3 local_consistency false 1.0"
     # "baseline_w_contrast FixedLearnedInit first_frame networks.TransformerEncoder 1 43 2 3 local_consistency false 1.0"
     # "baseline_w_contrast FixedLearnedInit first_frame networks.TransformerEncoder 1 44 2 3 local_consistency false 1.0"
+
+    #videosaur
+    "videosaur_w_contrast FixedLearnedInit first_frame networks.TransformerEncoder 1 42 2 3 local_consistency false 1.0"
+    "videosaur_w_contrast FixedLearnedInit first_frame networks.TransformerEncoder 1 43 2 3 local_consistency false 1.0"
+    "videosaur_w_contrast FixedLearnedInit first_frame networks.TransformerEncoder 1 44 2 3 local_consistency false 1.0"
 
     # # ablation
     # # saliency mode
